@@ -1,0 +1,112 @@
+{
+  "stock": {
+    "soro": 20,
+    "mascara": 50,
+    "seringa": 100,
+    "luvas": 200,
+    "alcool": 30,
+    "termometro": 30,
+    "avental": 50,
+    "agulha": 120,
+    "tubo_ensaio": 300,
+    "pipeta": 80,
+    "centrifuga": 5,
+    "microscopio": 3,
+    "ataduras": 60
+  },
+  "detections": [],
+  "items": [
+    {
+      "id": "soro",
+      "displayName": "Soro Fisiologico",
+      "unit": "un",
+      "minStock": 10,
+      "shelfLifeDays": 365
+    },
+    {
+      "id": "mascara",
+      "displayName": "Mascara Cirurgica",
+      "unit": "un",
+      "minStock": 50,
+      "shelfLifeDays": 365
+    },
+    {
+      "id": "seringa",
+      "displayName": "Seringa",
+      "unit": "un",
+      "minStock": 80,
+      "shelfLifeDays": 1095
+    },
+    {
+      "id": "luvas",
+      "displayName": "Luvas",
+      "unit": "pares",
+      "minStock": 150,
+      "shelfLifeDays": 730
+    },
+    {
+      "id": "alcool",
+      "displayName": "Alcool 70",
+      "unit": "l",
+      "minStock": 20,
+      "shelfLifeDays": 365
+    },
+    {
+      "id": "termometro",
+      "displayName": "Termometro",
+      "unit": "un",
+      "minStock": 10,
+      "shelfLifeDays": 1825
+    },
+    {
+      "id": "avental",
+      "displayName": "Avental",
+      "unit": "un",
+      "minStock": 30,
+      "shelfLifeDays": 365
+    },
+    {
+      "id": "agulha",
+      "displayName": "Agulha",
+      "unit": "un",
+      "minStock": 100,
+      "shelfLifeDays": 1825
+    },
+    {
+      "id": "tubo_ensaio",
+      "displayName": "Tubo de Ensaio",
+      "unit": "un",
+      "minStock": 200,
+      "shelfLifeDays": 365
+    },
+    {
+      "id": "pipeta",
+      "displayName": "Pipeta",
+      "unit": "un",
+      "minStock": 60,
+      "shelfLifeDays": 365
+    },
+    {
+      "id": "centrifuga",
+      "displayName": "Centrifuga",
+      "unit": "un",
+      "minStock": 2,
+      "shelfLifeDays": 1825
+    },
+    {
+      "id": "microscopio",
+      "displayName": "Microscopio",
+      "unit": "un",
+      "minStock": 2,
+      "shelfLifeDays": 1825
+    },
+    {
+      "id": "ataduras",
+      "displayName": "Ataduras",
+      "unit": "rolos",
+      "minStock": 40,
+      "shelfLifeDays": 365
+    }
+  ],
+  "itemBatches": {}
+}

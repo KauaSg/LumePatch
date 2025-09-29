@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState } from "react";
-import * as tf from "@tensorflow/tfjs";
 import * as tmImage from "@teachablemachine/image";
 import {
   AppBar,
@@ -45,7 +44,20 @@ import AnalyticsIcon from "@mui/icons-material/Analytics";
 import HistoryIcon from "@mui/icons-material/History";
 import WarningIcon from "@mui/icons-material/Warning";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import SettingsIcon from "@mui/icons-material/Settings";
 import Dashboard from "./Dashboard";
+import { DEFAULT_DETECTIONS, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS_MAP } from "./constants/persistence";
+import {
+  loadStock as loadPersistedStock,
+  saveStock as persistStock,
+  loadDetections as loadPersistedDetections,
+  appendDetection as persistDetection,
+  clearDetections as purgeDetections,
+  loadItemSettings as loadPersistedItemSettings,
+  saveItemSetting as persistItemSetting,
+  loadItemBatches as loadPersistedItemBatches,
+  saveItemBatches as persistItemBatches,
+} from "./services/persistence";
 
 const TEACHABLE_MODEL_URL = "/teachable/";
 const TARGET_LABELS = [
@@ -64,6 +76,27 @@ const TARGET_LABELS = [
   "ataduras",
 ];
 const TEACHABLE_PROB_THRESHOLD = 0.85;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const EXPIRY_WARNING_DAYS = 7;
+
+const formatDate = (iso) => {
+  if (!iso) return "Sem validade";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Sem validade";
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+};
+
+const describeExpiry = (info) => {
+  if (!info || !info.nextBatch?.expiresAt) return "Sem validade";
+  const label = formatDate(info.nextBatch.expiresAt);
+  const diffDays = info.diffDays;
+  if (typeof diffDays !== "number") return label;
+  if (diffDays < 0) return `${label} (vencido)`;
+  if (diffDays === 0) return `${label} (vence hoje)`;
+  if (diffDays === 1) return `${label} (vence em 1 dia)`;
+  return `${label} (vence em ${diffDays} dias)`;
+};
 
 const theme = createTheme({
   palette: {
@@ -87,7 +120,7 @@ const theme = createTheme({
 });
 
 // Componente para exibir o nível de estoque com cores
-const StockLevelIndicator = ({ quantity, lowStockThreshold = 10 }) => {
+const StockLevelIndicator = ({ quantity, lowStockThreshold = 10, unit = "un" }) => {
   const getColor = () => {
     if (quantity === 0) return "error";
     if (quantity <= lowStockThreshold) return "warning";
@@ -103,7 +136,7 @@ const StockLevelIndicator = ({ quantity, lowStockThreshold = 10 }) => {
   return (
     <Chip
       icon={getIcon()}
-      label={`${quantity} un`}
+      label={`${quantity} ${unit}`}
       color={getColor()}
       variant={quantity === 0 ? "filled" : "outlined"}
       size="small"
@@ -113,26 +146,33 @@ const StockLevelIndicator = ({ quantity, lowStockThreshold = 10 }) => {
 };
 
 // Componente de card de estoque personalizado
-const StockCard = ({ itemName, quantity, onAddStock }) => {
-  const isLowStock = quantity <= 10;
+const StockCard = ({ itemName, quantity, onAddStock, onConfigure, metadata, expiryInfo }) => {
+  const displayName = metadata?.displayName || itemName.replace(/_/g, " ");
+  const unit = metadata?.unit || "un";
+  const threshold = typeof metadata?.minStock === "number" ? metadata.minStock : 10;
   const isOutOfStock = quantity === 0;
+  const isLowStock = !isOutOfStock && quantity <= threshold;
+  const diffDays = expiryInfo?.diffDays;
+  const isExpired = typeof diffDays === "number" && diffDays < 0;
+  const isExpiringSoon = typeof diffDays === "number" && diffDays >= 0 && diffDays <= EXPIRY_WARNING_DAYS;
+  const expiryStatusLabel = describeExpiry(expiryInfo);
+
+  let backgroundGradient = `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`;
+  let borderColor = alpha(theme.palette.success.main, 0.3);
+  if (isOutOfStock || isExpired) {
+    backgroundGradient = `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`;
+    borderColor = alpha(theme.palette.error.main, 0.3);
+  } else if (isLowStock || isExpiringSoon) {
+    backgroundGradient = `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.1)} 0%, ${alpha(theme.palette.warning.main, 0.05)} 100%)`;
+    borderColor = alpha(theme.palette.warning.main, 0.3);
+  }
 
   return (
     <Card 
       sx={{ 
-        height: 120,
-        background: isOutOfStock 
-          ? `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`
-          : isLowStock
-          ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.1)} 0%, ${alpha(theme.palette.warning.main, 0.05)} 100%)`
-          : `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
-        border: `2px solid ${
-          isOutOfStock 
-            ? alpha(theme.palette.error.main, 0.3)
-            : isLowStock
-            ? alpha(theme.palette.warning.main, 0.3)
-            : alpha(theme.palette.success.main, 0.3)
-        }`,
+        height: 156,
+        background: backgroundGradient,
+        border: `2px solid ${borderColor}`,
         transition: "all 0.3s ease",
         "&:hover": {
           transform: "translateY(-4px)",
@@ -149,29 +189,53 @@ const StockCard = ({ itemName, quantity, onAddStock }) => {
           variant="subtitle2" 
           sx={{ 
             fontWeight: 600,
-            color: isOutOfStock ? "error.main" : "text.primary",
+            color: (isOutOfStock || isExpired) ? "error.main" : "text.primary",
             textTransform: "capitalize",
-            mb: 1
+            mb: 0.5
           }}
         >
-          {itemName.replace(/_/g, " ")}
+          {displayName}
         </Typography>
-        <StockLevelIndicator quantity={quantity} />
-      </Box>
-      <Tooltip title={`Adicionar estoque para ${itemName}`}>
-        <IconButton 
-          size="small" 
-          onClick={() => onAddStock(itemName)}
-          sx={{ 
-            alignSelf: "flex-end",
-            bgcolor: "primary.main",
-            color: "white",
-            "&:hover": { bgcolor: "primary.dark" }
-          }}
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+          Minimo: {threshold} {unit}
+        </Typography>
+        <Typography
+          variant="caption"
+          color={isExpired ? "error.main" : isExpiringSoon ? "warning.main" : "text.secondary"}
+          sx={{ display: "block", mb: 0.75 }}
         >
-          <AddIcon />
-        </IconButton>
-      </Tooltip>
+          Validade: {expiryStatusLabel}
+        </Typography>
+        <StockLevelIndicator quantity={quantity} unit={unit} lowStockThreshold={threshold} />
+      </Box>
+      <Stack direction="row" spacing={1} justifyContent="flex-end">
+        <Tooltip title={`Configurar ${displayName}`}>
+          <IconButton 
+            size="small" 
+            onClick={() => onConfigure(itemName)}
+            sx={{
+              bgcolor: alpha(theme.palette.primary.main, 0.1),
+              color: "primary.main",
+              "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.2) }
+            }}
+          >
+            <SettingsIcon />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={`Adicionar estoque para ${displayName}`}>
+          <IconButton 
+            size="small" 
+            onClick={() => onAddStock(itemName)}
+            sx={{ 
+              bgcolor: "primary.main",
+              color: "white",
+              "&:hover": { bgcolor: "primary.dark" }
+            }}
+          >
+            <AddIcon />
+          </IconButton>
+        </Tooltip>
+      </Stack>
     </Card>
   );
 };
@@ -194,58 +258,24 @@ export default function App() {
   const [loadingText, setLoadingText] = useState("Inicializando câmera...");
   const [modalOpen, setModalOpen] = useState(false);
   const [pending, setPending] = useState(null);
-  const [saved, setSaved] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("savedDetections") || "[]");
-    } catch {
-      return [];
-    }
-  });
+  const [saved, setSaved] = useState(DEFAULT_DETECTIONS);
+  const [itemSettings, setItemSettings] = useState(() => ({ ...DEFAULT_ITEM_SETTINGS_MAP }));
+  const [itemBatches, setItemBatches] = useState({});
 
   // NOVO: quantidade a confirmar (opcional)
   const [confirmQty, setConfirmQty] = useState("");
 
   // Estado do estoque
-  const [stock, setStock] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("stock")) || {
-        soro: 20,
-        mascara: 50,
-        seringa: 100,
-        luvas: 200,
-        alcool: 30,
-        termometro: 15,
-        avental: 40,
-        agulha: 120,
-        tubo_ensaio: 300,
-        pipeta: 80,
-        centrifuga: 5,
-        microscopio: 3,
-        ataduras: 60,
-      };
-    } catch {
-      return {
-        soro: 20,
-        mascara: 50,
-        seringa: 100,
-        luvas: 200,
-        alcool: 30,
-        termometro: 15,
-        avental: 40,
-        agulha: 120,
-        tubo_ensaio: 300,
-        pipeta: 80,
-        centrifuga: 5,
-        microscopio: 3,
-        ataduras: 60,
-      };
-    }
-  });
+  const [stock, setStock] = useState(DEFAULT_STOCK);
 
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [stockItem, setStockItem] = useState("soro");
   const [stockQty, setStockQty] = useState(0);
+  const [stockExpiry, setStockExpiry] = useState("");
   const [activeTab, setActiveTab] = useState(0);
+
+  const [itemConfig, setItemConfig] = useState({ open: false, itemId: null });
+  const [itemConfigForm, setItemConfigForm] = useState({ displayName: "", unit: "", minStock: "", shelfLifeDays: "" });
 
   const [snackbar, setSnackbar] = useState({ open: false, message: "", type: "success" });
 
@@ -254,6 +284,198 @@ export default function App() {
     return () => stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapPersistence() {
+      try {
+        const [initialStock, initialDetections, initialItemSettings, initialBatches] = await Promise.all([
+          loadPersistedStock(),
+          loadPersistedDetections(),
+          loadPersistedItemSettings(),
+          loadPersistedItemBatches(),
+        ]);
+
+        if (!cancelled) {
+          setStock(initialStock);
+          setSaved(initialDetections);
+          setItemSettings({ ...DEFAULT_ITEM_SETTINGS_MAP, ...initialItemSettings });
+          setItemBatches(initialBatches || {});
+        }
+      } catch (error) {
+        console.warn("Não foi possível carregar dados persistidos", error);
+      }
+    }
+
+    bootstrapPersistence();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+  const toItemId = (value = "") => value.toLowerCase().replace(/\s+/g, "_");
+  const getItemMeta = (id) => {
+    const key = toItemId(id);
+    return itemSettings[key] || DEFAULT_ITEM_SETTINGS_MAP[key] || { id: key, displayName: key.replace(/_/g, " ") };
+  };
+  const getItemDisplayName = (id) => getItemMeta(id).displayName || toItemId(id).replace(/_/g, " ");
+  const getItemUnit = (id) => getItemMeta(id).unit || "un";
+  const getItemMinStock = (id) => {
+    const meta = getItemMeta(id);
+    return typeof meta.minStock === "number" ? meta.minStock : 10;
+  };
+  const getItemShelfLife = (id) => {
+    const meta = getItemMeta(id);
+    return typeof meta.shelfLifeDays === "number" ? meta.shelfLifeDays : 0;
+  };
+
+  const getItemBatches = (id) => {
+    const key = toItemId(id);
+    const batches = itemBatches[key] || [];
+    return [...batches].sort((a, b) => {
+      const aTime = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity;
+      const bTime = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity;
+      if (aTime === bTime) {
+        return new Date(a.addedAt || 0).getTime() - new Date(b.addedAt || 0).getTime();
+      }
+      return aTime - bTime;
+    });
+  };
+
+  const getItemExpiryInfo = (id) => {
+    const batches = getItemBatches(id).filter((batch) => (batch.remaining ?? batch.quantity ?? 0) > 0);
+    if (!batches.length) return null;
+    const totalRemaining = batches.reduce((sum, batch) => sum + (batch.remaining ?? batch.quantity ?? 0), 0);
+    const nextWithDate = batches.find((batch) => batch.expiresAt);
+    if (!nextWithDate) {
+      return { batches, totalRemaining };
+    }
+    const expiryDate = new Date(nextWithDate.expiresAt);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((expiryDate.getTime() - today.getTime()) / MS_PER_DAY);
+    return { batches, totalRemaining, nextBatch: nextWithDate, expiryDate, diffDays };
+  };
+
+  function updateItemBatches(itemId, updater) {
+    const key = toItemId(itemId);
+    let snapshot = null;
+    setItemBatches((prev) => {
+      const current = prev[key] || [];
+      const next = updater(current.map((batch) => ({ ...batch }))) || [];
+      const nextMap = { ...prev };
+      if (next.length) {
+        nextMap[key] = next;
+      } else {
+        delete nextMap[key];
+      }
+      snapshot = { key, batches: next };
+      return nextMap;
+    });
+    if (snapshot) {
+      persistItemBatches(snapshot.key, snapshot.batches).catch((error) => {
+        console.warn("Falha ao sincronizar lotes", error);
+      });
+    }
+  }
+
+  function appendItemBatch(itemId, quantity, expiresAt) {
+    updateItemBatches(itemId, (current) => {
+      const batch = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        quantity,
+        remaining: quantity,
+        addedAt: new Date().toISOString(),
+        expiresAt: expiresAt || null,
+      };
+      const next = [...current, batch];
+      return next.sort((a, b) => {
+        const aTime = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity;
+        const bTime = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity;
+        if (aTime === bTime) {
+          return new Date(a.addedAt || 0).getTime() - new Date(b.addedAt || 0).getTime();
+        }
+        return aTime - bTime;
+      });
+    });
+  }
+
+  function consumeItemBatches(itemId, quantity) {
+    if (!quantity) return;
+    updateItemBatches(itemId, (current) => {
+      if (!current.length) return current;
+      let remainingToConsume = quantity;
+      const sorted = [...current].sort((a, b) => {
+        const aTime = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity;
+        const bTime = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity;
+        if (aTime === bTime) {
+          return new Date(a.addedAt || 0).getTime() - new Date(b.addedAt || 0).getTime();
+        }
+        return aTime - bTime;
+      });
+      const updated = [];
+      for (const batch of sorted) {
+        const available = batch.remaining ?? batch.quantity ?? 0;
+        if (available <= 0) continue;
+        if (remainingToConsume <= 0) {
+          updated.push(batch);
+          continue;
+        }
+        const consume = Math.min(available, remainingToConsume);
+        const remaining = available - consume;
+        remainingToConsume -= consume;
+        if (remaining > 0) {
+          updated.push({ ...batch, remaining });
+        }
+      }
+      return updated;
+    });
+  }
+
+  const getSuggestedExpiry = (id) => {
+    const shelfLife = getItemShelfLife(id);
+    if (!shelfLife) return "";
+    const date = new Date();
+    date.setDate(date.getDate() + shelfLife);
+    return date.toISOString().slice(0, 10);
+  };
+
+  function openItemConfigModal(itemId) {
+    const meta = getItemMeta(itemId);
+    setItemConfig({ open: true, itemId });
+    setItemConfigForm({
+      displayName: meta.displayName || itemId.replace(/_/g, " "),
+      unit: meta.unit || "un",
+      minStock: String(meta.minStock ?? 0),
+      shelfLifeDays: String(meta.shelfLifeDays ?? 0),
+    });
+  }
+
+  function closeItemConfigModal() {
+    setItemConfig({ open: false, itemId: null });
+  }
+
+  function handleItemConfigFieldChange(field, value) {
+    setItemConfigForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function saveItemConfig() {
+    if (!itemConfig.itemId) return;
+    const normalized = {
+      displayName: itemConfigForm.displayName.trim() || getItemDisplayName(itemConfig.itemId),
+      unit: itemConfigForm.unit.trim() || "un",
+      minStock: Math.max(0, parseInt(itemConfigForm.minStock, 10) || 0),
+      shelfLifeDays: Math.max(0, parseInt(itemConfigForm.shelfLifeDays, 10) || 0),
+    };
+
+    const savedSetting = await persistItemSetting(itemConfig.itemId, normalized);
+    setItemSettings((prev) => ({ ...prev, [itemConfig.itemId]: savedSetting }));
+    setSnackbar({ open: true, message: `Configura��es atualizadas para ${getItemDisplayName(itemConfig.itemId)}`, type: "success" });
+    closeItemConfigModal();
+  }
 
   async function start() {
     try {
@@ -356,33 +578,48 @@ export default function App() {
 
   function confirmPending() {
     if (!pending) return;
-    const label = pending.label.toLowerCase();
+    const itemId = toItemId(pending.label);
 
-    // Quantidade: se vazio/invalid, usa 1
     let qty = parseInt(confirmQty, 10);
     if (isNaN(qty) || qty <= 0) qty = 1;
 
-    if (stock[label] && stock[label] >= qty) {
-      // dá baixa com a quantidade solicitada
-      const updatedStock = { ...stock, [label]: stock[label] - qty };
-      setStock(updatedStock);
-      localStorage.setItem("stock", JSON.stringify(updatedStock));
+    const currentQty = stock[itemId] ?? 0;
+    const displayName = getItemDisplayName(itemId);
+    const unit = getItemUnit(itemId);
 
-      const item = {
+    if (currentQty && currentQty >= qty) {
+      const updatedStock = { ...stock, [itemId]: currentQty - qty };
+      setStock(updatedStock);
+      persistStock(updatedStock);
+      consumeItemBatches(itemId, qty);
+
+      const detectionRecord = {
         label: pending.label,
+        itemId,
         score: pending.score,
         image: pending.image,
         ts: new Date().toISOString(),
+        quantity: qty,
       };
-      const next = [item, ...saved];
-      setSaved(next);
-      localStorage.setItem("savedDetections", JSON.stringify(next));
-      setSnackbar({ open: true, message: `✅ Baixa de ${qty} unidade(s) registrada no estoque de ${label}`, type: "success" });
+
+      setSaved((prev) => [detectionRecord, ...prev]);
+      persistDetection(detectionRecord).then((created) => {
+        if (!created) return;
+        setSaved((prev) => {
+          const index = prev.findIndex((entry) => entry.ts === detectionRecord.ts);
+          if (index === -1) return prev;
+          const next = [...prev];
+          next[index] = created;
+          return next;
+        });
+      });
+
+      setSnackbar({ open: true, message: `? Baixa de ${qty} ${unit} registrada no estoque de ${displayName}`, type: "success" });
       setConfirmQty("");
-    } else if (stock[label] && stock[label] > 0 && stock[label] < qty) {
-      setSnackbar({ open: true, message: `❌ Quantidade solicitada (${qty}) maior que o estoque disponível (${stock[label]}).`, type: "error" });
+    } else if (currentQty > 0 && currentQty < qty) {
+      setSnackbar({ open: true, message: `? Quantidade solicitada (${qty}) maior que o estoque disponivel (${currentQty} ${unit}).`, type: "error" });
     } else {
-      setSnackbar({ open: true, message: `❌ Sem estoque disponível de ${label}`, type: "error" });
+      setSnackbar({ open: true, message: `? Sem estoque disponivel de ${displayName}`, type: "error" });
     }
 
     setPending(null);
@@ -397,30 +634,61 @@ export default function App() {
 
   function clearSaved() {
     setSaved([]);
-    localStorage.removeItem("savedDetections");
-    setSnackbar({ open: true, message: "Histórico de detecções limpo", type: "info" });
+    purgeDetections();
+    setSnackbar({ open: true, message: "Historico de deteccoes limpo", type: "info" });
   }
 
   function addStock() {
     const qty = parseInt(stockQty, 10);
     if (!qty || qty <= 0) return;
-    const updatedStock = { ...stock, [stockItem]: (stock[stockItem] || 0) + qty };
+    const itemId = stockItem;
+    const updatedStock = { ...stock, [itemId]: (stock[itemId] || 0) + qty };
     setStock(updatedStock);
-    localStorage.setItem("stock", JSON.stringify(updatedStock));
-    setSnackbar({ open: true, message: `📦 Adicionado ${qty} unidades ao estoque de ${stockItem}`, type: "success" });
+    persistStock(updatedStock);
+
+    const expiryInput = (stockExpiry || "").trim();
+    let expiresAt = null;
+    if (expiryInput) {
+      const parsed = new Date(expiryInput);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiresAt = parsed.toISOString();
+      }
+    } else {
+      const suggested = getSuggestedExpiry(itemId);
+      if (suggested) {
+        const parsedSuggested = new Date(suggested);
+        if (!Number.isNaN(parsedSuggested.getTime())) {
+          expiresAt = parsedSuggested.toISOString();
+        }
+      }
+    }
+
+    appendItemBatch(itemId, qty, expiresAt);
+
+    const displayName = getItemDisplayName(itemId);
+    const unit = getItemUnit(itemId);
+    const expirySuffix = expiresAt ? ` com validade ate ${formatDate(expiresAt)}` : "";
+    setSnackbar({ open: true, message: `?? Adicionado ${qty} ${unit} ao estoque de ${displayName}${expirySuffix}`, type: "success" });
     setStockQty(0);
+    setStockExpiry(getSuggestedExpiry(itemId));
     setStockModalOpen(false);
   }
 
   const handleAddStockClick = (item) => {
     setStockItem(item);
-    setStockQty(10); // Valor padrão
+    setStockQty(10); // Valor padrao
+    setStockExpiry(getSuggestedExpiry(item));
     setStockModalOpen(true);
   };
 
-  // Calcular estatísticas do estoque
-  const lowStockItems = Object.entries(stock).filter(([_, qty]) => qty <= 10);
-  const outOfStockItems = Object.entries(stock).filter(([_, qty]) => qty === 0);
+  // Calcular estatisticas do estoque
+  const lowStockItems = Object.entries(stock).filter(([id, qty]) => qty > 0 && qty <= getItemMinStock(id));
+  const outOfStockItems = Object.entries(stock).filter(([, qty]) => qty === 0);
+  const expiryEntries = Object.keys(stock)
+    .map((id) => ({ id, info: getItemExpiryInfo(id) }))
+    .filter((entry) => entry.info && entry.info.nextBatch?.expiresAt);
+  const expiredItems = expiryEntries.filter((entry) => typeof entry.info.diffDays === "number" && entry.info.diffDays < 0);
+  const expiringSoonItems = expiryEntries.filter((entry) => typeof entry.info.diffDays === "number" && entry.info.diffDays >= 0 && entry.info.diffDays <= EXPIRY_WARNING_DAYS);
 
   return (
     <ThemeProvider theme={theme}>
@@ -538,15 +806,15 @@ export default function App() {
               sx={{ 
                 p: 3, 
                 textAlign: "center",
-                background: `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
-                border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`
+                background: `linear-gradient(135deg, ${alpha(theme.palette.info.main, 0.1)} 0%, ${alpha(theme.palette.info.main, 0.05)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`
               }}
             >
-              <Typography variant="h4" color="success.main" fontWeight="bold">
-                {saved.length}
+              <Typography variant="h4" color="info.main" fontWeight="bold">
+                {expiringSoonItems.length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Detecções Realizadas
+                Itens proximos da validade
               </Typography>
             </Paper>
           </Grid>
@@ -644,38 +912,51 @@ export default function App() {
                       </Box>
                     ) : (
                       <List sx={{ maxHeight: 320, overflow: "auto" }}>
-                        {saved.map((s, i) => (
-                          <ListItem key={i} divider>
-                            <ListItemAvatar>
-                              <Avatar 
-                                variant="rounded" 
-                                src={s.image} 
-                                alt={s.label}
-                                sx={{ width: 60, height: 45 }}
-                              />
-                            </ListItemAvatar>
-                            <ListItemText
-                              primary={
-                                <Typography fontWeight="600" textTransform="capitalize">
-                                  {s.label}
-                                </Typography>
-                              }
-                              secondary={
-                                <Box>
-                                  <Typography variant="body2" color="text.secondary">
-                                    {new Date(s.ts).toLocaleString()}
+                        {saved.map((s, i) => {
+                          const itemId = s.itemId ? toItemId(s.itemId) : toItemId(s.label || "");
+                          const displayName = getItemDisplayName(itemId);
+                          const unit = getItemUnit(itemId);
+                          return (
+                            <ListItem key={i} divider>
+                              <ListItemAvatar>
+                                <Avatar 
+                                  variant="rounded" 
+                                  src={s.image} 
+                                  alt={displayName}
+                                  sx={{ width: 60, height: 45 }}
+                                />
+                              </ListItemAvatar>
+                              <ListItemText
+                                primary={
+                                  <Typography fontWeight="600" textTransform="capitalize">
+                                    {displayName}
                                   </Typography>
-                                  <Chip 
-                                    label={`${(s.score * 100).toFixed(1)}%`} 
-                                    size="small" 
-                                    color="primary"
-                                    variant="outlined"
-                                  />
-                                </Box>
-                              }
-                            />
-                          </ListItem>
-                        ))}
+                                }
+                                secondary={
+                                  <Box>
+                                    <Typography variant="body2" color="text.secondary">
+                                      {new Date(s.ts).toLocaleString()}
+                                    </Typography>
+                                    <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} alignItems="center">
+                                      <Chip 
+                                        label={`${(s.score * 100).toFixed(1)}%`} 
+                                        size="small" 
+                                        color="primary"
+                                        variant="outlined"
+                                      />
+                                      <Chip 
+                                        label={`${s.quantity ?? 1} ${unit}`}
+                                        size="small"
+                                        color="default"
+                                        variant="outlined"
+                                      />
+                                    </Stack>
+                                  </Box>
+                                }
+                              />
+                            </ListItem>
+                          );
+                        })}
                       </List>
                     )}
 
@@ -731,16 +1012,26 @@ export default function App() {
               </Box>
 
               {/* Alertas de estoque */}
-              {(lowStockItems.length > 0 || outOfStockItems.length > 0) && (
+              {(lowStockItems.length > 0 || outOfStockItems.length > 0 || expiringSoonItems.length > 0 || expiredItems.length > 0) && (
                 <Box sx={{ mb: 3 }}>
                   {outOfStockItems.length > 0 && (
                     <Alert severity="error" sx={{ mb: 1, borderRadius: 2 }}>
-                      <strong>{outOfStockItems.length} item(s) esgotado(s):</strong> {outOfStockItems.map(([name]) => name).join(", ")}
+                      <strong>{outOfStockItems.length} item(s) esgotado(s):</strong> {outOfStockItems.map(([name]) => getItemDisplayName(name)).join(", ")}
+                    </Alert>
+                  )}
+                  {expiredItems.length > 0 && (
+                    <Alert severity="error" sx={{ mb: 1, borderRadius: 2 }}>
+                      <strong>{expiredItems.length} item(s) vencido(s):</strong> {expiredItems.map(({ id, info }) => `${getItemDisplayName(id)} (${describeExpiry(info)})`).join(", ")}
+                    </Alert>
+                  )}
+                  {expiringSoonItems.length > 0 && (
+                    <Alert severity="warning" sx={{ mb: 1, borderRadius: 2 }}>
+                      <strong>{expiringSoonItems.length} item(s) prestes a vencer:</strong> {expiringSoonItems.map(({ id, info }) => `${getItemDisplayName(id)} (${describeExpiry(info)})`).join(", ")}
                     </Alert>
                   )}
                   {lowStockItems.length > 0 && (
                     <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                      <strong>{lowStockItems.length} item(s) com estoque baixo:</strong> {lowStockItems.map(([name]) => name).join(", ")}
+                      <strong>{lowStockItems.length} item(s) com estoque baixo:</strong> {lowStockItems.map(([name]) => getItemDisplayName(name)).join(", ")}
                     </Alert>
                   )}
                 </Box>
@@ -753,7 +1044,10 @@ export default function App() {
                     <StockCard 
                       itemName={itemName} 
                       quantity={quantity} 
+                      metadata={getItemMeta(itemName)}
+                      expiryInfo={getItemExpiryInfo(itemName)}
                       onAddStock={handleAddStockClick}
+                      onConfigure={openItemConfigModal}
                     />
                   </Grid>
                 ))}
@@ -862,14 +1156,18 @@ export default function App() {
             select
             label="Item"
             value={stockItem}
-            onChange={(e) => setStockItem(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setStockItem(value);
+              setStockExpiry(getSuggestedExpiry(value));
+            }}
             fullWidth
             margin="normal"
             variant="outlined"
           >
-            {TARGET_LABELS.map((item) => (
+            {Object.keys(stock).map((item) => (
               <MenuItem key={item} value={item}>
-                <Box sx={{ textTransform: "capitalize" }}>{item.replace(/_/g, " ")}</Box>
+                <Box sx={{ textTransform: "capitalize" }}>{getItemDisplayName(item)}</Box>
               </MenuItem>
             ))}
           </TextField>
@@ -883,8 +1181,18 @@ export default function App() {
             variant="outlined"
             InputProps={{ inputProps: { min: 1 } }}
           />
+          <TextField
+            label="Validade (opcional)"
+            type="date"
+            value={stockExpiry}
+            onChange={(e) => setStockExpiry(e.target.value)}
+            fullWidth
+            margin="normal"
+            InputLabelProps={{ shrink: true }}
+            helperText={getSuggestedExpiry(stockItem) ? `Sugestao: ${getSuggestedExpiry(stockItem)}` : "Deixe em branco se nao houver controle"}
+          />
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-            Estoque atual: <strong>{stock[stockItem] || 0} unidades</strong>
+            Estoque atual: <strong>{stock[stockItem] || 0} {getItemUnit(stockItem)}</strong>
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
@@ -901,6 +1209,66 @@ export default function App() {
             sx={{ borderRadius: 2 }}
           >
             Adicionar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal de configura��o de item */}
+      <Dialog
+        open={itemConfig.open}
+        onClose={closeItemConfigModal}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>
+          <SettingsIcon sx={{ mr: 1, verticalAlign: "middle" }} />
+          Configurar Item
+        </DialogTitle>
+        <DialogContent sx={{ p: 3 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            ID: <strong>{itemConfig.itemId || ""}</strong>
+          </Typography>
+          <TextField
+            label="Nome de exibicao"
+            value={itemConfigForm.displayName}
+            onChange={(e) => handleItemConfigFieldChange("displayName", e.target.value)}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Unidade"
+            value={itemConfigForm.unit}
+            onChange={(e) => handleItemConfigFieldChange("unit", e.target.value)}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Estoque minimo"
+            type="number"
+            value={itemConfigForm.minStock}
+            onChange={(e) => handleItemConfigFieldChange("minStock", e.target.value)}
+            fullWidth
+            margin="normal"
+            InputProps={{ inputProps: { min: 0 } }}
+          />
+          <TextField
+            label="Validade (dias)"
+            type="number"
+            value={itemConfigForm.shelfLifeDays}
+            onChange={(e) => handleItemConfigFieldChange("shelfLifeDays", e.target.value)}
+            fullWidth
+            margin="normal"
+            InputProps={{ inputProps: { min: 0 } }}
+            helperText="Use 0 para itens sem controle de validade."
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={closeItemConfigModal} sx={{ borderRadius: 2 }}>
+            Cancelar
+          </Button>
+          <Button onClick={saveItemConfig} variant="contained" color="primary" sx={{ borderRadius: 2 }}>
+            Salvar
           </Button>
         </DialogActions>
       </Dialog>

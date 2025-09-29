@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { 
   Box, 
   Typography, 
@@ -32,6 +32,16 @@ import {
   FilterList,
   Refresh
 } from "@mui/icons-material";
+import { DEFAULT_DETECTIONS, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS_MAP } from "./constants/persistence";
+import {
+  loadStock as loadPersistedStock,
+  loadDetections as loadPersistedDetections,
+  loadItemSettings as loadPersistedItemSettings,
+  loadItemBatches as loadPersistedItemBatches,
+} from "./services/persistence";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const EXPIRY_WARNING_DAYS = 7;
 
 // Paleta de cores consistente
 const COLORS = ["#1565c0", "#42a5f5", "#81d4fa", "#29b6f6", "#4fc3f7", 
@@ -39,29 +49,118 @@ const COLORS = ["#1565c0", "#42a5f5", "#81d4fa", "#29b6f6", "#4fc3f7",
                 "#66bb6a", "#4caf50", "#2e7d32"];
 
 export default function Dashboard() {
-  const [stock, setStock] = useState({});
-  const [detections, setDetections] = useState([]);
+  const [stock, setStock] = useState(DEFAULT_STOCK);
+  const [detections, setDetections] = useState(DEFAULT_DETECTIONS);
+  const [itemSettings, setItemSettings] = useState(() => ({ ...DEFAULT_ITEM_SETTINGS_MAP }));
+  const [itemBatches, setItemBatches] = useState({});
   const [timeRange, setTimeRange] = useState("7"); // 7, 30, 90, 365
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Carregar dados do localStorage
+  // Carregar dados persistidos (API + fallback localStorage)
   useEffect(() => {
-    const loadData = () => {
+    let cancelled = false;
+
+    const loadData = async () => {
       try {
-        const stockData = JSON.parse(localStorage.getItem("stock")) || {};
-        const detectionData = JSON.parse(localStorage.getItem("savedDetections") || "[]");
-        setStock(stockData);
-        setDetections(detectionData);
+        const [stockData, detectionData, itemSettingsData, itemBatchesData] = await Promise.all([
+          loadPersistedStock(),
+          loadPersistedDetections(),
+          loadPersistedItemSettings(),
+          loadPersistedItemBatches(),
+        ]);
+        if (!cancelled) {
+          setStock(stockData);
+          setDetections(detectionData);
+          setItemSettings((current) => ({ ...DEFAULT_ITEM_SETTINGS_MAP, ...current, ...itemSettingsData }));
+          setItemBatches(itemBatchesData || {});
+        }
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
       }
     };
 
     loadData();
-    // Atualizar a cada 30 segundos para dados em tempo real
     const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [refreshKey]);
+
+    const toItemId = useCallback((value = "") => value.toLowerCase().replace(/\s+/g, "_"), []);
+  const getItemMeta = useCallback(
+    (id) => {
+      const key = toItemId(id);
+      return itemSettings[key] || DEFAULT_ITEM_SETTINGS_MAP[key] || { id: key, displayName: key.replace(/_/g, " ") };
+    },
+    [itemSettings, toItemId]
+  );
+  const getItemDisplayName = useCallback(
+    (id) => getItemMeta(id).displayName || toItemId(id).replace(/_/g, " "),
+    [getItemMeta, toItemId]
+  );
+  const getItemUnit = useCallback((id) => getItemMeta(id).unit || "un", [getItemMeta]);
+  const getItemMinStock = useCallback(
+    (id) => {
+      const meta = getItemMeta(id);
+      return typeof meta.minStock === "number" ? meta.minStock : 10;
+    },
+    [getItemMeta]
+  );
+  const getItemBatches = useCallback(
+    (id) => {
+      const key = toItemId(id);
+      const batches = itemBatches[key] || [];
+      return [...batches].sort((a, b) => {
+        const aTime = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity;
+        const bTime = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity;
+        if (aTime === bTime) {
+          return new Date(a.addedAt || 0).getTime() - new Date(b.addedAt || 0).getTime();
+        }
+        return aTime - bTime;
+      });
+    },
+    [itemBatches, toItemId]
+  );
+
+  const formatDate = useCallback((iso) => {
+    if (!iso) return "Sem validade";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "Sem validade";
+    return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }, []);
+
+  const getItemExpiryInfo = useCallback(
+    (id) => {
+      const batches = getItemBatches(id).filter((batch) => (batch.remaining ?? batch.quantity ?? 0) > 0);
+      if (!batches.length) return null;
+      const totalRemaining = batches.reduce((sum, batch) => sum + (batch.remaining ?? batch.quantity ?? 0), 0);
+      const nextWithDate = batches.find((batch) => batch.expiresAt);
+      if (!nextWithDate) {
+        return { batches, totalRemaining };
+      }
+      const expiryDate = new Date(nextWithDate.expiresAt);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((expiryDate.getTime() - today.getTime()) / MS_PER_DAY);
+      return { batches, totalRemaining, nextBatch: nextWithDate, expiryDate, diffDays };
+    },
+    [getItemBatches]
+  );
+
+  const describeExpiry = useCallback(
+    (info) => {
+      if (!info || !info.nextBatch?.expiresAt) return "Sem validade";
+      const label = formatDate(info.nextBatch.expiresAt);
+      const diffDays = info.diffDays;
+      if (typeof diffDays !== "number") return label;
+      if (diffDays < 0) return `${label} (vencido)`;
+      if (diffDays === 0) return `${label} (vence hoje)`;
+      if (diffDays === 1) return `${label} (vence em 1 dia)`;
+      return `${label} (vence em ${diffDays} dias)`;
+    },
+    [formatDate]
+  );
 
   // Processar dados para os gráficos
   const { 
@@ -83,34 +182,41 @@ export default function Dashboard() {
 
     // Calcular consumo por item
     const consumptionByItem = filteredDetections.reduce((acc, detection) => {
-      const item = detection.label.toLowerCase();
-      acc[item] = (acc[item] || 0) + 1;
+      const itemId = detection.itemId ? toItemId(detection.itemId) : toItemId(detection.label || "");
+      const quantity = Number(detection.quantity) || 1;
+      acc[itemId] = (acc[itemId] || 0) + quantity;
       return acc;
     }, {});
 
-    // Dados para gráfico de barras (consumo)
     const consumptionData = Object.entries(consumptionByItem)
-      .map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
+      .map(([id, value]) => ({
+        id,
+        name: getItemDisplayName(id),
         consumo: value,
-        estoque: stock[name] || 0
+        estoque: stock[id] || 0,
+        unit: getItemUnit(id),
       }))
       .sort((a, b) => b.consumo - a.consumo);
 
-    // Dados para gráfico de pizza (distribuição do consumo)
+    // Dados para grafico de pizza (distribuicao do consumo)
+    const totalStockValue = Object.values(stock).reduce((a, b) => a + b, 0);
     const stockData = Object.entries(stock)
-      .filter(([_, value]) => value > 0)
-      .map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
+      .filter(([, value]) => value > 0)
+      .map(([id, value]) => ({
+        id,
+        name: getItemDisplayName(id),
         value,
-        percent: (value / Object.values(stock).reduce((a, b) => a + b, 0)) * 100
+        unit: getItemUnit(id),
+        percent: totalStockValue ? value / totalStockValue : 0
       }))
       .sort((a, b) => b.value - a.value);
+
 
     // Dados para tendência temporal (consumo por dia)
     const dailyConsumption = filteredDetections.reduce((acc, detection) => {
       const date = new Date(detection.ts).toLocaleDateString();
-      acc[date] = (acc[date] || 0) + 1;
+      const quantity = Number(detection.quantity) || 1;
+      acc[date] = (acc[date] || 0) + quantity;
       return acc;
     }, {});
 
@@ -118,30 +224,75 @@ export default function Dashboard() {
       .map(([date, count]) => ({ date, consumo: count }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Alertas de estoque
-    const alerts = Object.entries(stock)
-      .filter(([name, quantity]) => quantity <= 5)
-      .map(([name, quantity]) => ({
-        item: name,
-        quantity,
-        severity: quantity === 0 ? "error" : "warning",
-        message: quantity === 0 
-          ? `${name} está esgotado` 
-          : `${name} está com estoque baixo (${quantity} unidades)`
-      }));
+    // Alertas de estoque e validade
+    const stockAlerts = Object.entries(stock)
+      .map(([id, quantity]) => {
+        const displayName = getItemDisplayName(id);
+        const unit = getItemUnit(id);
+        const minStock = getItemMinStock(id);
+        if (quantity === 0) {
+          return {
+            item: id,
+            quantity,
+            severity: "error",
+            message: `${displayName} esta esgotado`,
+          };
+        }
+        if (quantity <= minStock) {
+          return {
+            item: id,
+            quantity,
+            severity: "warning",
+            message: `${displayName} esta com estoque baixo (${quantity} ${unit})`,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
 
+    const expiryEntries = Object.keys(stock)
+      .map((id) => ({ id, info: getItemExpiryInfo(id) }))
+      .filter((entry) => entry.info && entry.info.nextBatch?.expiresAt);
+
+    const expiryAlerts = expiryEntries
+      .map(({ id, info }) => {
+        const displayName = getItemDisplayName(id);
+        const description = describeExpiry(info);
+        if (typeof info.diffDays === "number" && info.diffDays < 0) {
+          return {
+            item: id,
+            severity: "error",
+            message: `${displayName} esta vencido (${description})`,
+          };
+        }
+        if (typeof info.diffDays === "number" && info.diffDays <= EXPIRY_WARNING_DAYS) {
+          return {
+            item: id,
+            severity: "warning",
+            message: `${displayName} vence em breve (${description})`,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    const alerts = [...stockAlerts, ...expiryAlerts];
+
+    // Estatisticas gerais
     // Estatísticas gerais
-    const totalStock = Object.values(stock).reduce((a, b) => a + b, 0);
-    const totalConsumption = filteredDetections.length;
+    const totalConsumption = filteredDetections.reduce(
+      (total, detection) => total + (Number(detection.quantity) || 1),
+      0
+    );
     const avgDailyConsumption = trendData.length > 0 
       ? totalConsumption / trendData.length 
       : 0;
 
     const mostConsumed = consumptionData.length > 0 ? consumptionData[0] : null;
-    const criticalItems = alerts.filter(alert => alert.severity === "error").length;
+    const criticalItems = alerts.filter((alert) => alert.severity === "error").length;
 
     const statistics = {
-      totalStock,
+      totalStock: totalStockValue,
       totalConsumption,
       avgDailyConsumption: Math.round(avgDailyConsumption * 100) / 100,
       mostConsumed: mostConsumed ? `${mostConsumed.name} (${mostConsumed.consumo})` : "N/A",
@@ -153,10 +304,17 @@ export default function Dashboard() {
     // Detecções recentes (últimas 5)
     const recentDetections = detections
       .slice(0, 5)
-      .map(detection => ({
-        ...detection,
-        date: new Date(detection.ts).toLocaleString()
-      }));
+      .map((detection) => {
+        const itemId = detection.itemId ? toItemId(detection.itemId) : toItemId(detection.label || "");
+        return {
+          ...detection,
+          itemId,
+          displayName: getItemDisplayName(itemId),
+          unit: getItemUnit(itemId),
+          quantity: Number(detection.quantity) || 1,
+          date: new Date(detection.ts).toLocaleString(),
+        };
+      });
 
     return {
       consumptionData,
@@ -166,7 +324,7 @@ export default function Dashboard() {
       statistics,
       recentDetections
     };
-  }, [stock, detections, timeRange]);
+  }, [stock, detections, timeRange, getItemDisplayName, getItemUnit, getItemMinStock, toItemId, getItemExpiryInfo, describeExpiry]);
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -416,16 +574,16 @@ export default function Dashboard() {
                     <ListItemText
                       primary={
                         <Typography fontWeight="bold" textTransform="capitalize">
-                          {detection.label}
+                          {detection.displayName || detection.label}
                         </Typography>
                       }
-                      secondary={detection.date}
+                      secondary={`${detection.date} - ${detection.quantity} ${detection.unit || "un"}`}
                     />
                   </ListItem>
                 ))
               ) : (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-                  Nenhuma detecção recente
+                  Nenhuma deteccao recente
                 </Typography>
               )}
             </List>
