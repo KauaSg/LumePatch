@@ -72,6 +72,7 @@ import GuidedTour from "./components/GuidedTour";
 import InstallPwaPrompt from "./components/InstallPwaPrompt";
 import { AppStateProvider } from "./state/AppStateContext";
 >>>>>>> Stashed changes
+<<<<<<< Updated upstream
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const EXPIRY_WARNING_DAYS = 7;
@@ -93,6 +94,8 @@ const describeExpiry = (info) => {
   if (diffDays === 1) return `${label} (vence em 1 dia)`;
   return `${label} (vence em ${diffDays} dias)`;
 };
+=======
+>>>>>>> Stashed changes
 
 const theme = createTheme({
   palette: {

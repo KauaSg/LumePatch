@@ -1,6 +1,9 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import { DEFAULT_DETECTIONS, DEFAULT_HISTORY, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS, DEFAULT_ITEM_SETTINGS_MAP, STORAGE_KEYS } from "../constants/persistence";
 =======
+=======
+>>>>>>> Stashed changes
 import {
   DEFAULT_ITEMS,
   DEFAULT_ITEM_MAP,
@@ -9,6 +12,9 @@ import {
   DEFAULT_RETRAIN_QUEUE,
   STORAGE_KEYS,
 } from "../constants/persistence";
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
@@ -20,6 +26,7 @@ const hasLocalStorage = hasWindow && typeof window.localStorage !== "undefined";
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 const arrayToMap = (items) => (items || []).reduce((acc, item) => {
   if (item && item.id) {
     acc[item.id] = item;
@@ -28,6 +35,9 @@ const arrayToMap = (items) => (items || []).reduce((acc, item) => {
 }, {});
 
 const mapToArray = (map) => Object.values(map || {});
+=======
+const mapValues = (map) => Object.values(map || {});
+>>>>>>> Stashed changes
 =======
 const mapValues = (map) => Object.values(map || {});
 >>>>>>> Stashed changes
@@ -57,7 +67,10 @@ async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   try {
@@ -71,11 +84,17 @@ async function request(path, options = {}) {
     });
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     if (response.status === 404) {
       return null;
     }
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     if (!response.ok) {
       throw new Error(`API respondeu ${response.status}`);
@@ -83,7 +102,10 @@ async function request(path, options = {}) {
 
     if (response.status === 204) return null;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
     const text = await response.text();
@@ -93,6 +115,7 @@ async function request(path, options = {}) {
   }
 }
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 export async function loadStock() {
   try {
@@ -137,6 +160,8 @@ export async function saveStock(stockSnapshot) {
     console.warn("Falha ao sincronizar estoque com API", error);
   }
 =======
+=======
+>>>>>>> Stashed changes
 export async function loadItems() {
   try {
     const data = await request(`/items`);
@@ -166,6 +191,9 @@ export async function saveItem(item) {
     console.warn(`Falha ao salvar item ${item.id} na API`, error);
   }
   return item;
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 }
 
@@ -173,7 +201,10 @@ export async function loadItemBatches() {
   try {
     const data = await request(`/itemBatches`);
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
     if (Array.isArray(data)) {
       const map = data.reduce((acc, entry) => {
         if (entry && entry.id) {
@@ -184,6 +215,9 @@ export async function loadItemBatches() {
       writeLocal(STORAGE_KEYS.itemBatches, map);
       return map;
     }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     if (data && typeof data === "object" && !Array.isArray(data)) {
       writeLocal(STORAGE_KEYS.itemBatches, data);
@@ -193,7 +227,11 @@ export async function loadItemBatches() {
     console.warn("Falha ao carregar lotes da API, usando localStorage", error);
   }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   return readLocal(STORAGE_KEYS.itemBatches, {});
+=======
+  return readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES);
+>>>>>>> Stashed changes
 =======
   return readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES);
 >>>>>>> Stashed changes
@@ -201,6 +239,7 @@ export async function loadItemBatches() {
 
 export async function saveItemBatches(itemId, batches) {
   const snapshot = deepClone(batches || []);
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
   const local = readLocal(STORAGE_KEYS.itemBatches, {});
   const next = { ...local, [itemId]: snapshot };
@@ -232,6 +271,8 @@ export async function loadDetections() {
 }
 
 =======
+=======
+>>>>>>> Stashed changes
   const current = readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES);
   const next = { ...current, [itemId]: snapshot };
   writeLocal(STORAGE_KEYS.itemBatches, next);
@@ -246,6 +287,9 @@ export async function loadDetections() {
   return snapshot;
 }
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 export async function loadHistory() {
   try {
@@ -256,7 +300,11 @@ export async function loadHistory() {
     }
   } catch (error) {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     console.warn("Falha ao carregar historico da API, usando localStorage", error);
+=======
+    console.warn("Falha ao carregar histórico da API, usando localStorage", error);
+>>>>>>> Stashed changes
 =======
     console.warn("Falha ao carregar histórico da API, usando localStorage", error);
 >>>>>>> Stashed changes
@@ -264,6 +312,7 @@ export async function loadHistory() {
   return readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
 }
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 export async function appendDetection(detection) {
   const optimisticItem = deepClone(detection);
@@ -294,6 +343,11 @@ export async function appendHistory(record) {
   const current = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
   const next = [record, ...current];
 >>>>>>> Stashed changes
+=======
+export async function appendHistory(record) {
+  const current = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
+  const next = [record, ...current];
+>>>>>>> Stashed changes
   writeLocal(STORAGE_KEYS.history, next);
   try {
     await request(`/history`, {
@@ -302,7 +356,11 @@ export async function appendHistory(record) {
     });
   } catch (error) {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     console.warn("Falha ao registrar historico na API", error);
+=======
+    console.warn("Falha ao enviar histórico para API", error);
+>>>>>>> Stashed changes
 =======
     console.warn("Falha ao enviar histórico para API", error);
 >>>>>>> Stashed changes
@@ -310,6 +368,7 @@ export async function appendHistory(record) {
   return record;
 }
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 export async function saveItemSetting(itemId, updates) {
   const localData = readLocal(STORAGE_KEYS.itemSettings, DEFAULT_ITEM_SETTINGS);
@@ -369,6 +428,8 @@ export function hydrateDefaults() {
   writeLocal(STORAGE_KEYS.itemSettings, readLocal(STORAGE_KEYS.itemSettings, DEFAULT_ITEM_SETTINGS));
   writeLocal(STORAGE_KEYS.itemBatches, readLocal(STORAGE_KEYS.itemBatches, {}));
 =======
+=======
+>>>>>>> Stashed changes
 export async function updateHistoryRecord(id, updates) {
   const current = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
   const index = current.findIndex((entry) => entry.id === id);
@@ -469,5 +530,8 @@ export function hydrateDefaults() {
   writeLocal(STORAGE_KEYS.itemBatches, readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES));
   writeLocal(STORAGE_KEYS.history, readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY));
   writeLocal(STORAGE_KEYS.retrainQueue, readLocal(STORAGE_KEYS.retrainQueue, DEFAULT_RETRAIN_QUEUE));
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 }

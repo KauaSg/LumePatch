@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 export const DEFAULT_STOCK = {
   soro: 20,
   mascara: 50,
@@ -36,6 +37,8 @@ export const DEFAULT_ITEM_SETTINGS = [
 
 export const DEFAULT_ITEM_SETTINGS_MAP = DEFAULT_ITEM_SETTINGS.reduce((acc, item) => {
 =======
+=======
+>>>>>>> Stashed changes
 export const DEFAULT_ITEMS = [
   { id: "soro", name: "Soro Fisiológico", unit: "un", min: 10, minConfidence: 0.7, shelfLifeDays: 365 },
   { id: "mascara", name: "Máscara Cirúrgica", unit: "un", min: 50, minConfidence: 0.7, shelfLifeDays: 365 },
@@ -53,11 +56,15 @@ export const DEFAULT_ITEMS = [
 ];
 
 export const DEFAULT_ITEM_MAP = DEFAULT_ITEMS.reduce((acc, item) => {
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   acc[item.id] = item;
   return acc;
 }, {});
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 export const STORAGE_KEYS = {
   stock: "stock",
@@ -67,6 +74,8 @@ export const STORAGE_KEYS = {
   itemBatches: "itemBatches",
 };
 =======
+=======
+>>>>>>> Stashed changes
 export const DEFAULT_ITEM_BATCHES = {};
 
 export const DEFAULT_HISTORY = [];
@@ -82,4 +91,7 @@ export const STORAGE_KEYS = {
 };
 
 export const KNOWN_LABELS = DEFAULT_ITEMS.map((item) => item.id);
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
