@@ -15,6 +15,7 @@ export const DEFAULT_STOCK = {
 };
 
 export const DEFAULT_DETECTIONS = [];
+export const DEFAULT_HISTORY = [];
 
 export const DEFAULT_ITEM_SETTINGS = [
   { id: "soro", displayName: "Soro Fisiologico", unit: "un", minStock: 10, shelfLifeDays: 365 },
@@ -40,6 +41,7 @@ export const DEFAULT_ITEM_SETTINGS_MAP = DEFAULT_ITEM_SETTINGS.reduce((acc, item
 export const STORAGE_KEYS = {
   stock: "stock",
   detections: "savedDetections",
+  history: "history",
   itemSettings: "itemSettings",
   itemBatches: "itemBatches",
 };

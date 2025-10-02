@@ -46,17 +46,19 @@ import WarningIcon from "@mui/icons-material/Warning";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import SettingsIcon from "@mui/icons-material/Settings";
 import Dashboard from "./Dashboard";
-import { DEFAULT_DETECTIONS, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS_MAP } from "./constants/persistence";
+import { DEFAULT_DETECTIONS, DEFAULT_HISTORY, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS_MAP } from "./constants/persistence";
 import {
   loadStock as loadPersistedStock,
   saveStock as persistStock,
-  loadDetections as loadPersistedDetections,
   appendDetection as persistDetection,
   clearDetections as purgeDetections,
   loadItemSettings as loadPersistedItemSettings,
   saveItemSetting as persistItemSetting,
   loadItemBatches as loadPersistedItemBatches,
   saveItemBatches as persistItemBatches,
+  loadHistory as loadPersistedHistory,
+  appendHistory as persistHistory,
+  clearHistory as purgeHistory,
 } from "./services/persistence";
 
 const TEACHABLE_MODEL_URL = "/teachable/";
@@ -258,7 +260,7 @@ export default function App() {
   const [loadingText, setLoadingText] = useState("Inicializando câmera...");
   const [modalOpen, setModalOpen] = useState(false);
   const [pending, setPending] = useState(null);
-  const [saved, setSaved] = useState(DEFAULT_DETECTIONS);
+  const [history, setHistory] = useState(DEFAULT_HISTORY);
   const [itemSettings, setItemSettings] = useState(() => ({ ...DEFAULT_ITEM_SETTINGS_MAP }));
   const [itemBatches, setItemBatches] = useState({});
 
@@ -290,16 +292,16 @@ export default function App() {
 
     async function bootstrapPersistence() {
       try {
-        const [initialStock, initialDetections, initialItemSettings, initialBatches] = await Promise.all([
+        const [initialStock, initialItemSettings, initialBatches, initialHistory] = await Promise.all([
           loadPersistedStock(),
-          loadPersistedDetections(),
           loadPersistedItemSettings(),
           loadPersistedItemBatches(),
+          loadPersistedHistory(),
         ]);
 
         if (!cancelled) {
           setStock(initialStock);
-          setSaved(initialDetections);
+          setHistory(initialHistory || []);
           setItemSettings({ ...DEFAULT_ITEM_SETTINGS_MAP, ...initialItemSettings });
           setItemBatches(initialBatches || {});
         }
@@ -471,8 +473,8 @@ export default function App() {
       shelfLifeDays: Math.max(0, parseInt(itemConfigForm.shelfLifeDays, 10) || 0),
     };
 
-    const savedSetting = await persistItemSetting(itemConfig.itemId, normalized);
-    setItemSettings((prev) => ({ ...prev, [itemConfig.itemId]: savedSetting }));
+    const historySetting = await persistItemSetting(itemConfig.itemId, normalized);
+    setItemSettings((prev) => ({ ...prev, [itemConfig.itemId]: historySetting }));
     setSnackbar({ open: true, message: `Configura��es atualizadas para ${getItemDisplayName(itemConfig.itemId)}`, type: "success" });
     closeItemConfigModal();
   }
@@ -594,24 +596,22 @@ export default function App() {
       consumeItemBatches(itemId, qty);
 
       const detectionRecord = {
+        id: `hist-${Date.now()}`,
+        type: "detector",
+        direction: "out",
         label: pending.label,
         itemId,
         score: pending.score,
         image: pending.image,
         ts: new Date().toISOString(),
         quantity: qty,
+        unit,
       };
 
-      setSaved((prev) => [detectionRecord, ...prev]);
-      persistDetection(detectionRecord).then((created) => {
-        if (!created) return;
-        setSaved((prev) => {
-          const index = prev.findIndex((entry) => entry.ts === detectionRecord.ts);
-          if (index === -1) return prev;
-          const next = [...prev];
-          next[index] = created;
-          return next;
-        });
+      setHistory((prev) => [detectionRecord, ...prev]);
+      persistHistory(detectionRecord);
+      persistDetection(detectionRecord).catch((error) => {
+        console.warn("Falha ao registrar deteccao na API", error);
       });
 
       setSnackbar({ open: true, message: `? Baixa de ${qty} ${unit} registrada no estoque de ${displayName}`, type: "success" });
@@ -632,10 +632,11 @@ export default function App() {
     setConfirmQty("");
   }
 
-  function clearSaved() {
-    setSaved([]);
+  function clearHistoryRecords() {
+    setHistory([]);
     purgeDetections();
-    setSnackbar({ open: true, message: "Historico de deteccoes limpo", type: "info" });
+    purgeHistory();
+    setSnackbar({ open: true, message: "Historico limpo", type: "info" });
   }
 
   function addStock() {
@@ -664,6 +665,20 @@ export default function App() {
     }
 
     appendItemBatch(itemId, qty, expiresAt);
+
+    const historyRecord = {
+      id: `hist-${Date.now()}`,
+      type: "manual-in",
+      direction: "in",
+      itemId,
+      label: getItemDisplayName(itemId),
+      quantity: qty,
+      unit: getItemUnit(itemId),
+      expiresAt,
+      ts: new Date().toISOString(),
+    };
+    setHistory((prev) => [historyRecord, ...prev]);
+    persistHistory(historyRecord);
 
     const displayName = getItemDisplayName(itemId);
     const unit = getItemUnit(itemId);
@@ -806,15 +821,15 @@ export default function App() {
               sx={{ 
                 p: 3, 
                 textAlign: "center",
-                background: `linear-gradient(135deg, ${alpha(theme.palette.info.main, 0.1)} 0%, ${alpha(theme.palette.info.main, 0.05)} 100%)`,
-                border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`
+                background: `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`
               }}
             >
-              <Typography variant="h4" color="info.main" fontWeight="bold">
-                {expiringSoonItems.length}
+              <Typography variant="h4" color="success.main" fontWeight="bold">
+                {history.length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Itens proximos da validade
+                Movimentacoes Registradas
               </Typography>
             </Paper>
           </Grid>
@@ -900,64 +915,196 @@ export default function App() {
                       </Typography>
                     </Box>
                     
-                    {saved.length === 0 ? (
+                    {history.length === 0 ? (
+
                       <Box sx={{ textAlign: "center", py: 4 }}>
+
                         <CameraAltIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
+
                         <Typography variant="body2" color="text.secondary">
-                          Nenhuma detecção realizada ainda.
+
+                          Nenhuma movimentacao registrada ainda.
+
                         </Typography>
+
                         <Typography variant="caption" color="text.secondary">
-                          Aponte a câmera para os objetos hospitalares
+
+                          Registre movimentos via camera ou ajuste manual.
+
                         </Typography>
+
                       </Box>
+
                     ) : (
+
                       <List sx={{ maxHeight: 320, overflow: "auto" }}>
-                        {saved.map((s, i) => {
-                          const itemId = s.itemId ? toItemId(s.itemId) : toItemId(s.label || "");
+
+                        {history.map((entry, index) => {
+
+                          const itemId = entry.itemId ? toItemId(entry.itemId) : toItemId(entry.label || "");
+
                           const displayName = getItemDisplayName(itemId);
+
                           const unit = getItemUnit(itemId);
+
+                          const isDetection = entry.type === "detector";
+
+                          const direction = entry.direction || (isDetection ? "out" : "in");
+
+                          const directionLabel = direction === "out" ? "Saida" : "Entrada";
+
+                          const quantity = entry.quantity ?? 0;
+
+                          const expiryLabel = entry.expiresAt ? `Validade ${formatDate(entry.expiresAt)}` : null;
+
                           return (
-                            <ListItem key={i} divider>
+
+                            <ListItem key={index} divider>
+
                               <ListItemAvatar>
-                                <Avatar 
-                                  variant="rounded" 
-                                  src={s.image} 
-                                  alt={displayName}
-                                  sx={{ width: 60, height: 45 }}
-                                />
+
+                                {entry.image ? (
+
+                                  <Avatar
+
+                                    variant="rounded"
+
+                                    src={entry.image}
+
+                                    alt={displayName}
+
+                                    sx={{ width: 60, height: 45 }}
+
+                                  />
+
+                                ) : (
+
+                                  <Avatar
+
+                                    variant="rounded"
+
+                                    sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: "primary.main" }}
+
+                                  >
+
+                                    {displayName.charAt(0).toUpperCase()}
+
+                                  </Avatar>
+
+                                )}
+
                               </ListItemAvatar>
+
                               <ListItemText
+
                                 primary={
-                                  <Typography fontWeight="600" textTransform="capitalize">
-                                    {displayName}
-                                  </Typography>
-                                }
-                                secondary={
-                                  <Box>
-                                    <Typography variant="body2" color="text.secondary">
-                                      {new Date(s.ts).toLocaleString()}
+
+                                  <Stack direction="row" spacing={1} alignItems="center">
+
+                                    <Typography fontWeight="600" textTransform="capitalize">
+
+                                      {displayName}
+
                                     </Typography>
-                                    <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} alignItems="center">
-                                      <Chip 
-                                        label={`${(s.score * 100).toFixed(1)}%`} 
-                                        size="small" 
-                                        color="primary"
-                                        variant="outlined"
-                                      />
-                                      <Chip 
-                                        label={`${s.quantity ?? 1} ${unit}`}
-                                        size="small"
-                                        color="default"
-                                        variant="outlined"
-                                      />
-                                    </Stack>
-                                  </Box>
+
+                                    <Chip
+
+                                      label={directionLabel}
+
+                                      size="small"
+
+                                      color={direction === "out" ? "error" : "success"}
+
+                                    />
+
+                                    <Chip
+
+                                      label={isDetection ? "Deteccao" : "Manual"}
+
+                                      size="small"
+
+                                      variant="outlined"
+
+                                      color={isDetection ? "primary" : "default"}
+
+                                    />
+
+                                  </Stack>
+
                                 }
+
+                                secondary={
+
+                                  <Box>
+
+                                    <Typography variant="body2" color="text.secondary">
+
+                                      {new Date(entry.ts).toLocaleString()}
+
+                                    </Typography>
+
+                                    <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} alignItems="center">
+
+                                      <Chip
+
+                                        label={`${direction === "out" ? "-" : "+"}${quantity} ${unit}`}
+
+                                        size="small"
+
+                                        color="default"
+
+                                        variant="outlined"
+
+                                      />
+
+                                      {isDetection && entry.score !== undefined && (
+
+                                        <Chip
+
+                                          label={`${(entry.score * 100).toFixed(1)}%`}
+
+                                          size="small"
+
+                                          color="primary"
+
+                                          variant="outlined"
+
+                                        />
+
+                                      )}
+
+                                      {expiryLabel && (
+
+                                        <Chip
+
+                                          label={expiryLabel}
+
+                                          size="small"
+
+                                          color="info"
+
+                                          variant="outlined"
+
+                                        />
+
+                                      )}
+
+                                    </Stack>
+
+                                  </Box>
+
+                                }
+
                               />
+
                             </ListItem>
+
                           );
+
                         })}
+
                       </List>
+
                     )}
 
                     <Stack direction="row" spacing={2} mt={3}>
@@ -965,7 +1112,7 @@ export default function App() {
                         variant="outlined" 
                         color="error" 
                         startIcon={<DeleteIcon />} 
-                        onClick={clearSaved}
+                        onClick={clearHistoryRecords}
                         fullWidth
                       >
                         Limpar Histórico
@@ -975,11 +1122,11 @@ export default function App() {
                         color="primary"
                         startIcon={<SaveAltIcon />}
                         onClick={() => {
-                          const blob = new Blob([JSON.stringify(saved, null, 2)], { type: "application/json" });
+                          const blob = new Blob([JSON.stringify(history, null, 2)], { type: "application/json" });
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement("a");
                           a.href = url;
-                          a.download = "detections.json";
+                          a.download = "history.json";
                           a.click();
                           URL.revokeObjectURL(url);
                         }}

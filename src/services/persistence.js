@@ -1,4 +1,4 @@
-import { DEFAULT_DETECTIONS, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS, DEFAULT_ITEM_SETTINGS_MAP, STORAGE_KEYS } from "../constants/persistence";
+import { DEFAULT_DETECTIONS, DEFAULT_HISTORY, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS, DEFAULT_ITEM_SETTINGS_MAP, STORAGE_KEYS } from "../constants/persistence";
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 const API_TIMEOUT = 5000;
@@ -153,6 +153,19 @@ export async function loadDetections() {
   return readLocal(STORAGE_KEYS.detections, DEFAULT_DETECTIONS);
 }
 
+export async function loadHistory() {
+  try {
+    const data = await request(`/history?_sort=ts&_order=desc`);
+    if (Array.isArray(data)) {
+      writeLocal(STORAGE_KEYS.history, data);
+      return data;
+    }
+  } catch (error) {
+    console.warn("Falha ao carregar historico da API, usando localStorage", error);
+  }
+  return readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
+}
+
 export async function appendDetection(detection) {
   const optimisticItem = deepClone(detection);
   const existing = readLocal(STORAGE_KEYS.detections, DEFAULT_DETECTIONS);
@@ -172,6 +185,21 @@ export async function appendDetection(detection) {
   }
 
   return optimisticItem;
+}
+
+export async function appendHistory(record) {
+  const existing = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
+  const next = [record, ...existing];
+  writeLocal(STORAGE_KEYS.history, next);
+  try {
+    await request(`/history`, {
+      method: "POST",
+      body: JSON.stringify(record),
+    });
+  } catch (error) {
+    console.warn("Falha ao registrar historico na API", error);
+  }
+  return record;
 }
 
 export async function saveItemSetting(itemId, updates) {
@@ -195,6 +223,18 @@ export async function saveItemSetting(itemId, updates) {
   return next;
 }
 
+export async function clearHistory() {
+  writeLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
+  try {
+    const existing = await request(`/history`);
+    if (Array.isArray(existing)) {
+      await Promise.all(existing.map((item) => request(`/history/${item.id}`, { method: "DELETE" })));
+    }
+  } catch (error) {
+    console.warn("Falha ao limpar historico na API", error);
+  }
+}
+
 export async function clearDetections() {
   writeLocal(STORAGE_KEYS.detections, DEFAULT_DETECTIONS);
   try {
@@ -216,6 +256,7 @@ export async function clearDetections() {
 export function hydrateDefaults() {
   writeLocal(STORAGE_KEYS.stock, readLocal(STORAGE_KEYS.stock, DEFAULT_STOCK));
   writeLocal(STORAGE_KEYS.detections, readLocal(STORAGE_KEYS.detections, DEFAULT_DETECTIONS));
+  writeLocal(STORAGE_KEYS.history, readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY));
   writeLocal(STORAGE_KEYS.itemSettings, readLocal(STORAGE_KEYS.itemSettings, DEFAULT_ITEM_SETTINGS));
   writeLocal(STORAGE_KEYS.itemBatches, readLocal(STORAGE_KEYS.itemBatches, {}));
 }

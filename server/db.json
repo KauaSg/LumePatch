@@ -108,5 +108,6 @@
       "shelfLifeDays": 365
     }
   ],
-  "itemBatches": {}
+  "itemBatches": {},
+  "history": []
 }
