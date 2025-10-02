@@ -1,4 +1,15 @@
+<<<<<<< Updated upstream
 import { DEFAULT_DETECTIONS, DEFAULT_HISTORY, DEFAULT_STOCK, DEFAULT_ITEM_SETTINGS, DEFAULT_ITEM_SETTINGS_MAP, STORAGE_KEYS } from "../constants/persistence";
+=======
+import {
+  DEFAULT_ITEMS,
+  DEFAULT_ITEM_MAP,
+  DEFAULT_ITEM_BATCHES,
+  DEFAULT_HISTORY,
+  DEFAULT_RETRAIN_QUEUE,
+  STORAGE_KEYS,
+} from "../constants/persistence";
+>>>>>>> Stashed changes
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 const API_TIMEOUT = 5000;
@@ -8,6 +19,7 @@ const hasLocalStorage = hasWindow && typeof window.localStorage !== "undefined";
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
 
+<<<<<<< Updated upstream
 const arrayToMap = (items) => (items || []).reduce((acc, item) => {
   if (item && item.id) {
     acc[item.id] = item;
@@ -16,6 +28,9 @@ const arrayToMap = (items) => (items || []).reduce((acc, item) => {
 }, {});
 
 const mapToArray = (map) => Object.values(map || {});
+=======
+const mapValues = (map) => Object.values(map || {});
+>>>>>>> Stashed changes
 
 function readLocal(key, fallback) {
   if (!hasLocalStorage) return deepClone(fallback);
@@ -41,7 +56,10 @@ function writeLocal(key, value) {
 async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       headers: {
@@ -52,12 +70,22 @@ async function request(path, options = {}) {
       ...options,
     });
 
+<<<<<<< Updated upstream
+=======
+    if (response.status === 404) {
+      return null;
+    }
+
+>>>>>>> Stashed changes
     if (!response.ok) {
       throw new Error(`API respondeu ${response.status}`);
     }
 
     if (response.status === 204) return null;
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
     const text = await response.text();
     return text ? JSON.parse(text) : null;
   } finally {
@@ -65,6 +93,7 @@ async function request(path, options = {}) {
   }
 }
 
+<<<<<<< Updated upstream
 export async function loadStock() {
   try {
     const data = await request(`/stock`);
@@ -107,11 +136,55 @@ export async function saveStock(stockSnapshot) {
   } catch (error) {
     console.warn("Falha ao sincronizar estoque com API", error);
   }
+=======
+export async function loadItems() {
+  try {
+    const data = await request(`/items`);
+    if (Array.isArray(data) && data.length) {
+      writeLocal(STORAGE_KEYS.items, data);
+      return data.map((item) => ({ ...DEFAULT_ITEM_MAP[item.id], ...item }));
+    }
+  } catch (error) {
+    console.warn("Falha ao carregar itens da API, usando localStorage", error);
+  }
+  const local = readLocal(STORAGE_KEYS.items, DEFAULT_ITEMS);
+  return Array.isArray(local) ? local : mapValues(local);
+}
+
+export async function saveItem(item) {
+  const current = readLocal(STORAGE_KEYS.items, DEFAULT_ITEMS);
+  const asArray = Array.isArray(current) ? current : mapValues(current);
+  const index = asArray.findIndex((entry) => entry.id === item.id);
+  const next = index >= 0 ? [...asArray.slice(0, index), item, ...asArray.slice(index + 1)] : [...asArray, item];
+  writeLocal(STORAGE_KEYS.items, next);
+  try {
+    await request(`/items/${item.id}`, {
+      method: "PUT",
+      body: JSON.stringify(item),
+    });
+  } catch (error) {
+    console.warn(`Falha ao salvar item ${item.id} na API`, error);
+  }
+  return item;
+>>>>>>> Stashed changes
 }
 
 export async function loadItemBatches() {
   try {
     const data = await request(`/itemBatches`);
+<<<<<<< Updated upstream
+=======
+    if (Array.isArray(data)) {
+      const map = data.reduce((acc, entry) => {
+        if (entry && entry.id) {
+          acc[entry.id] = Array.isArray(entry.batches) ? entry.batches : [];
+        }
+        return acc;
+      }, {});
+      writeLocal(STORAGE_KEYS.itemBatches, map);
+      return map;
+    }
+>>>>>>> Stashed changes
     if (data && typeof data === "object" && !Array.isArray(data)) {
       writeLocal(STORAGE_KEYS.itemBatches, data);
       return data;
@@ -119,11 +192,16 @@ export async function loadItemBatches() {
   } catch (error) {
     console.warn("Falha ao carregar lotes da API, usando localStorage", error);
   }
+<<<<<<< Updated upstream
   return readLocal(STORAGE_KEYS.itemBatches, {});
+=======
+  return readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES);
+>>>>>>> Stashed changes
 }
 
 export async function saveItemBatches(itemId, batches) {
   const snapshot = deepClone(batches || []);
+<<<<<<< Updated upstream
   const local = readLocal(STORAGE_KEYS.itemBatches, {});
   const next = { ...local, [itemId]: snapshot };
   writeLocal(STORAGE_KEYS.itemBatches, next);
@@ -153,6 +231,22 @@ export async function loadDetections() {
   return readLocal(STORAGE_KEYS.detections, DEFAULT_DETECTIONS);
 }
 
+=======
+  const current = readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES);
+  const next = { ...current, [itemId]: snapshot };
+  writeLocal(STORAGE_KEYS.itemBatches, next);
+  try {
+    await request(`/itemBatches/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify({ id: itemId, batches: snapshot }),
+    });
+  } catch (error) {
+    console.warn(`Falha ao enviar lotes do item ${itemId} para API`, error);
+  }
+  return snapshot;
+}
+
+>>>>>>> Stashed changes
 export async function loadHistory() {
   try {
     const data = await request(`/history?_sort=ts&_order=desc`);
@@ -161,11 +255,16 @@ export async function loadHistory() {
       return data;
     }
   } catch (error) {
+<<<<<<< Updated upstream
     console.warn("Falha ao carregar historico da API, usando localStorage", error);
+=======
+    console.warn("Falha ao carregar histórico da API, usando localStorage", error);
+>>>>>>> Stashed changes
   }
   return readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
 }
 
+<<<<<<< Updated upstream
 export async function appendDetection(detection) {
   const optimisticItem = deepClone(detection);
   const existing = readLocal(STORAGE_KEYS.detections, DEFAULT_DETECTIONS);
@@ -190,6 +289,11 @@ export async function appendDetection(detection) {
 export async function appendHistory(record) {
   const existing = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
   const next = [record, ...existing];
+=======
+export async function appendHistory(record) {
+  const current = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
+  const next = [record, ...current];
+>>>>>>> Stashed changes
   writeLocal(STORAGE_KEYS.history, next);
   try {
     await request(`/history`, {
@@ -197,11 +301,16 @@ export async function appendHistory(record) {
       body: JSON.stringify(record),
     });
   } catch (error) {
+<<<<<<< Updated upstream
     console.warn("Falha ao registrar historico na API", error);
+=======
+    console.warn("Falha ao enviar histórico para API", error);
+>>>>>>> Stashed changes
   }
   return record;
 }
 
+<<<<<<< Updated upstream
 export async function saveItemSetting(itemId, updates) {
   const localData = readLocal(STORAGE_KEYS.itemSettings, DEFAULT_ITEM_SETTINGS);
   const asArray = Array.isArray(localData) ? localData : mapToArray(localData);
@@ -259,4 +368,106 @@ export function hydrateDefaults() {
   writeLocal(STORAGE_KEYS.history, readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY));
   writeLocal(STORAGE_KEYS.itemSettings, readLocal(STORAGE_KEYS.itemSettings, DEFAULT_ITEM_SETTINGS));
   writeLocal(STORAGE_KEYS.itemBatches, readLocal(STORAGE_KEYS.itemBatches, {}));
+=======
+export async function updateHistoryRecord(id, updates) {
+  const current = readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY);
+  const index = current.findIndex((entry) => entry.id === id);
+  if (index < 0) return null;
+  const nextRecord = { ...current[index], ...updates };
+  const next = [...current];
+  next[index] = nextRecord;
+  writeLocal(STORAGE_KEYS.history, next);
+  try {
+    await request(`/history/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(nextRecord),
+    });
+  } catch (error) {
+    console.warn(`Falha ao atualizar histórico ${id} na API`, error);
+  }
+  return nextRecord;
+}
+
+export async function loadRetrainQueue() {
+  try {
+    const data = await request(`/retrainQueue?_sort=ts&_order=desc`);
+    if (Array.isArray(data)) {
+      writeLocal(STORAGE_KEYS.retrainQueue, data);
+      return data;
+    }
+  } catch (error) {
+    console.warn("Falha ao carregar fila de re-treino, usando localStorage", error);
+  }
+  return readLocal(STORAGE_KEYS.retrainQueue, DEFAULT_RETRAIN_QUEUE);
+}
+
+export async function appendRetrainQueue(entry) {
+  const current = readLocal(STORAGE_KEYS.retrainQueue, DEFAULT_RETRAIN_QUEUE);
+  const next = [entry, ...current];
+  writeLocal(STORAGE_KEYS.retrainQueue, next);
+  try {
+    await request(`/retrainQueue`, {
+      method: "POST",
+      body: JSON.stringify(entry),
+    });
+  } catch (error) {
+    console.warn("Falha ao registrar item na fila de re-treino", error);
+  }
+  return entry;
+}
+
+export async function deleteRetrainEntry(id) {
+  const current = readLocal(STORAGE_KEYS.retrainQueue, DEFAULT_RETRAIN_QUEUE);
+  const next = current.filter((entry) => entry.id !== id);
+  writeLocal(STORAGE_KEYS.retrainQueue, next);
+  try {
+    await request(`/retrainQueue/${id}`, { method: "DELETE" });
+  } catch (error) {
+    console.warn(`Falha ao remover ${id} da fila de re-treino`, error);
+  }
+}
+
+export async function clearRetrainQueue() {
+  writeLocal(STORAGE_KEYS.retrainQueue, DEFAULT_RETRAIN_QUEUE);
+  try {
+    const remote = await request(`/retrainQueue`);
+    if (Array.isArray(remote)) {
+      await Promise.all(remote.map((entry) => request(`/retrainQueue/${entry.id}`, { method: "DELETE" })));
+    }
+  } catch (error) {
+    console.warn("Falha ao limpar fila de re-treino remota", error);
+  }
+}
+
+export function loadFilters() {
+  return readLocal(STORAGE_KEYS.filters, {
+    expiry: "all",
+    auditType: "all",
+    auditSearch: "",
+    auditDateRange: null,
+  });
+}
+
+export function saveFilters(filters) {
+  writeLocal(STORAGE_KEYS.filters, filters);
+}
+
+export function loadUIState() {
+  return readLocal(STORAGE_KEYS.ui, {
+    tourDismissed: false,
+    keyboardTooltipDismissed: false,
+    demoMode: false,
+  });
+}
+
+export function saveUIState(state) {
+  writeLocal(STORAGE_KEYS.ui, state);
+}
+
+export function hydrateDefaults() {
+  writeLocal(STORAGE_KEYS.items, readLocal(STORAGE_KEYS.items, DEFAULT_ITEMS));
+  writeLocal(STORAGE_KEYS.itemBatches, readLocal(STORAGE_KEYS.itemBatches, DEFAULT_ITEM_BATCHES));
+  writeLocal(STORAGE_KEYS.history, readLocal(STORAGE_KEYS.history, DEFAULT_HISTORY));
+  writeLocal(STORAGE_KEYS.retrainQueue, readLocal(STORAGE_KEYS.retrainQueue, DEFAULT_RETRAIN_QUEUE));
+>>>>>>> Stashed changes
 }
