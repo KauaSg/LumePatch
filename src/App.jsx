@@ -1,40 +1,22 @@
+<<<<<<< Updated upstream
 import React, { useRef, useEffect, useState } from "react";
 import * as tf from "@tensorflow/tfjs";
 import * as tmImage from "@teachablemachine/image";
+=======
+import React from "react";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+>>>>>>> Stashed changes
 import {
+  CssBaseline,
   AppBar,
   Toolbar,
   Typography,
-  Container,
-  Card,
-  CardContent,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  Avatar,
-  Stack,
-  CssBaseline,
-  TextField,
-  MenuItem,
-  Snackbar,
-  Alert,
-  Box,
-  Grid,
-  Paper,
-  Chip,
-  IconButton,
   Tabs,
   Tab,
-  Divider,
-  Tooltip,
-  Fab
+  Container,
+  Box
 } from "@mui/material";
+<<<<<<< Updated upstream
 import { ThemeProvider, createTheme, alpha } from "@mui/material/styles";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SaveAltIcon from "@mui/icons-material/SaveAlt";
@@ -64,28 +46,40 @@ const TARGET_LABELS = [
   "ataduras",
 ];
 const TEACHABLE_PROB_THRESHOLD = 0.85;
+=======
+import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import DetectionView from "./pages/DetectionView";
+import DashboardView from "./pages/DashboardView";
+import AuditView from "./pages/AuditView";
+import RetrainQueueView from "./pages/RetrainQueueView";
+import BatchDetailView from "./pages/BatchDetailView";
+import ExportCsvButton from "./components/ExportCsvButton";
+import GuidedTour from "./components/GuidedTour";
+import InstallPwaPrompt from "./components/InstallPwaPrompt";
+import { AppStateProvider } from "./state/AppStateContext";
+>>>>>>> Stashed changes
 
 const theme = createTheme({
   palette: {
     primary: { main: "#1565c0" },
     secondary: { main: "#42a5f5" },
+    success: { main: "#2e7d32" },
+    warning: { main: "#f9a825" },
+    error: { main: "#d32f2f" },
     background: {
-      default: "#f8fafc",
+      default: "#f5f7fb",
       paper: "#ffffff",
     },
   },
   shape: { borderRadius: 16 },
   typography: {
     fontFamily: "'Inter', 'Roboto', sans-serif",
-    h4: {
-      fontWeight: 700,
-    },
-    h6: {
-      fontWeight: 600,
-    },
+    h5: { fontWeight: 700 },
+    h6: { fontWeight: 600 },
   },
 });
 
+<<<<<<< Updated upstream
 // Componente para exibir o nível de estoque com cores
 const StockLevelIndicator = ({ quantity, lowStockThreshold = 10 }) => {
   const getColor = () => {
@@ -93,14 +87,30 @@ const StockLevelIndicator = ({ quantity, lowStockThreshold = 10 }) => {
     if (quantity <= lowStockThreshold) return "warning";
     return "success";
   };
+=======
+const NAV_ITEMS = [
+  { label: "Detecção", path: "/deteccao" },
+  { label: "Dashboard", path: "/dashboard" },
+  { label: "Auditoria", path: "/auditoria" },
+  { label: "Fila de Aprendizado", path: "/fila" },
+];
+>>>>>>> Stashed changes
 
-  const getIcon = () => {
-    if (quantity === 0) return <WarningIcon />;
-    if (quantity <= lowStockThreshold) return <WarningIcon />;
-    return <CheckCircleIcon />;
+function NavigationTabs() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const current = React.useMemo(() => {
+    if (location.pathname.startsWith("/lote/")) return "/deteccao";
+    const match = NAV_ITEMS.find((item) => location.pathname.startsWith(item.path));
+    return match ? match.path : false;
+  }, [location.pathname]);
+
+  const handleChange = (_event, value) => {
+    navigate(value);
   };
 
   return (
+<<<<<<< Updated upstream
     <Chip
       icon={getIcon()}
       label={`${quantity} un`}
@@ -172,18 +182,66 @@ const StockCard = ({ itemName, quantity, onAddStock }) => {
         </IconButton>
       </Tooltip>
     </Card>
+=======
+    <Tabs
+      value={current}
+      onChange={handleChange}
+      textColor="inherit"
+      indicatorColor="secondary"
+      variant="scrollable"
+      scrollButtons="auto"
+    >
+      {NAV_ITEMS.map((item) => (
+        <Tab key={item.path} value={item.path} label={item.label} />
+      ))}
+    </Tabs>
+>>>>>>> Stashed changes
   );
-};
+}
 
-function TabPanel({ children, value, index, ...other }) {
+function BatchDetailRoute() {
+  const { batchId } = useParams();
+  const navigate = useNavigate();
+  if (!batchId) {
+    return <Navigate to="/deteccao" replace />;
+  }
+  return <BatchDetailView batchId={batchId} onBack={() => navigate(-1)} />;
+}
+
+function AppShell() {
   return (
-    <div hidden={value !== index} {...other}>
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
+    <Box sx={{ minHeight: "100vh", backgroundColor: "background.default" }}>
+      <AppBar position="static" elevation={0} color="primary">
+        <Toolbar sx={{ gap: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            LumePatch
+          </Typography>
+          <Box sx={{ flexGrow: 1 }} />
+          <ExportCsvButton />
+        </Toolbar>
+        <NavigationTabs />
+      </AppBar>
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/deteccao" replace />} />
+          <Route path="/deteccao" element={<DetectionView />} />
+          <Route path="/dashboard" element={<DashboardView />} />
+          <Route path="/auditoria" element={<AuditView />} />
+          <Route path="/fila" element={<RetrainQueueView />} />
+          <Route path="/lote/:batchId" element={<BatchDetailRoute />} />
+          <Route path="*" element={<Navigate to="/deteccao" replace />} />
+        </Routes>
+      </Container>
+      <Box sx={{ position: "fixed", bottom: 24, right: 24, width: 320 }}>
+        <InstallPwaPrompt />
+      </Box>
+      <GuidedTour />
+    </Box>
   );
 }
 
 export default function App() {
+<<<<<<< Updated upstream
   const videoRef = useRef(null);
   const overlayRef = useRef(null);
   const captureCanvasRef = useRef(null);
@@ -947,5 +1005,16 @@ export default function App() {
         <AddIcon sx={{ transform: "rotate(45deg)" }} />
       </Fab>
     </ThemeProvider>
+=======
+  return (
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AppStateProvider>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <AppShell />
+        </ThemeProvider>
+      </AppStateProvider>
+    </HashRouter>
+>>>>>>> Stashed changes
   );
 }
