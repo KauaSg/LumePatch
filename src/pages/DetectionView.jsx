@@ -31,7 +31,7 @@ import { formatDate, diffInDays } from "../utils/date";
 import { filterItemsByExpiry } from "../utils/analytics";
 import { resolveItemId } from "../utils/detection";
 
-const MODEL_URL = "/teachable/";
+const MODEL_URL = `${import.meta.env.BASE_URL}teachable/`;
 const DETECTION_COOLDOWN_MS = 600;
 const AUTO_COOLDOWN_MS = 2500;
 
@@ -76,6 +76,27 @@ export default function DetectionView() {
   const actions = useInventoryActions();
   const { items, itemBatches, detectionPending, detectionMode, itemMap, filters, ui, loading } = state;
 
+  const itemMapRef = useRef(itemMap);
+  const actionsRef = useRef(actions);
+  const detectionPendingRef = useRef(detectionPending);
+  const uiRef = useRef(ui);
+
+  useEffect(() => {
+    itemMapRef.current = itemMap;
+  }, [itemMap]);
+
+  useEffect(() => {
+    actionsRef.current = actions;
+  }, [actions]);
+
+  useEffect(() => {
+    detectionPendingRef.current = detectionPending;
+  }, [detectionPending]);
+
+  useEffect(() => {
+    uiRef.current = ui;
+  }, [ui]);
+
   const itemsWithStock = useMemo(() => {
     return (items || []).map((item) => {
       const batches = itemBatches[item.id] || [];
@@ -119,19 +140,16 @@ export default function DetectionView() {
     return canvas.toDataURL("image/png");
   }, []);
 
-  const openBatchModal = useCallback(
-    (itemId) => {
-      const item = itemMap[itemId];
-      if (!item) return;
-      setBatchModalItem(item);
-      setBatchModalOpen(true);
-    },
-    [itemMap]
-  );
+  const openBatchModal = useCallback((itemId) => {
+    const currentItem = itemMapRef.current?.[itemId];
+    if (!currentItem) return;
+    setBatchModalItem(currentItem);
+    setBatchModalOpen(true);
+  }, []);
 
   const detectionFrame = useCallback(async () => {
     if (!loopRef.current) return;
-    if (ui.demoMode) return;
+    if (uiRef.current?.demoMode) return;
     const now = Date.now();
     if (now < cooldownRef.current) {
       animationRef.current = requestAnimationFrame(detectionFrame);
@@ -141,6 +159,13 @@ export default function DetectionView() {
     const video = videoRef.current;
     const overlay = overlayRef.current;
     if (!video || !overlay || !modelRef.current) {
+      animationRef.current = requestAnimationFrame(detectionFrame);
+      return;
+    }
+
+    const actions = actionsRef.current;
+    const detectionPending = detectionPendingRef.current;
+    if (!actions) {
       animationRef.current = requestAnimationFrame(detectionFrame);
       return;
     }
@@ -188,8 +213,7 @@ export default function DetectionView() {
     }
 
     animationRef.current = requestAnimationFrame(detectionFrame);
-  }, [actions, detectionPending?.requiresConfirmation, openBatchModal, takeSnapshot]);
-
+  }, [openBatchModal, takeSnapshot]);
   const stopLoop = useCallback(() => {
     loopRef.current = false;
     if (animationRef.current) {
@@ -461,9 +485,18 @@ export default function DetectionView() {
 
       <ExpiryFilterChips />
 
-      <Paper sx={{ position: "relative", overflow: "hidden", borderRadius: 3, minHeight: 320 }}>
-        <video ref={videoRef} style={{ width: "100%", display: loadingMessage ? "none" : "block" }} muted playsInline />
-        <canvas ref={overlayRef} style={{ position: "absolute", inset: 0 }} />
+      <Paper className="camera-panel" sx={{ p: 0, position: "relative", borderRadius: 3, overflow: "hidden" }}>
+        <Box className="camera-panel__viewport">
+          <video
+            ref={videoRef}
+            className="camera-panel__stream"
+            autoPlay
+            muted
+            playsInline
+            style={{ display: loadingMessage ? "none" : "block" }}
+          />
+        </Box>
+        <canvas ref={overlayRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
         <canvas ref={captureCanvasRef} style={{ display: "none" }} />
         <CameraOverlay
           label={overlayPrediction.label}
@@ -606,3 +639,9 @@ export default function DetectionView() {
     </Box>
   );
 }
+
+
+
+
+
+
