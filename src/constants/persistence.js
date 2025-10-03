@@ -1,44 +1,3 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-export const DEFAULT_STOCK = {
-  soro: 20,
-  mascara: 50,
-  seringa: 100,
-  luvas: 200,
-  alcool: 30,
-  termometro: 15,
-  avental: 40,
-  agulha: 120,
-  tubo_ensaio: 300,
-  pipeta: 80,
-  centrifuga: 5,
-  microscopio: 3,
-  ataduras: 60,
-};
-
-export const DEFAULT_DETECTIONS = [];
-export const DEFAULT_HISTORY = [];
-
-export const DEFAULT_ITEM_SETTINGS = [
-  { id: "soro", displayName: "Soro Fisiologico", unit: "un", minStock: 10, shelfLifeDays: 365 },
-  { id: "mascara", displayName: "Mascara Cirurgica", unit: "un", minStock: 50, shelfLifeDays: 365 },
-  { id: "seringa", displayName: "Seringa", unit: "un", minStock: 80, shelfLifeDays: 1095 },
-  { id: "luvas", displayName: "Luvas", unit: "pares", minStock: 150, shelfLifeDays: 730 },
-  { id: "alcool", displayName: "Alcool 70", unit: "l", minStock: 20, shelfLifeDays: 365 },
-  { id: "termometro", displayName: "Termometro", unit: "un", minStock: 10, shelfLifeDays: 1825 },
-  { id: "avental", displayName: "Avental", unit: "un", minStock: 30, shelfLifeDays: 365 },
-  { id: "agulha", displayName: "Agulha", unit: "un", minStock: 100, shelfLifeDays: 1825 },
-  { id: "tubo_ensaio", displayName: "Tubo de Ensaio", unit: "un", minStock: 200, shelfLifeDays: 365 },
-  { id: "pipeta", displayName: "Pipeta", unit: "un", minStock: 60, shelfLifeDays: 365 },
-  { id: "centrifuga", displayName: "Centrifuga", unit: "un", minStock: 2, shelfLifeDays: 1825 },
-  { id: "microscopio", displayName: "Microscopio", unit: "un", minStock: 2, shelfLifeDays: 1825 },
-  { id: "ataduras", displayName: "Ataduras", unit: "rolos", minStock: 40, shelfLifeDays: 365 },
-];
-
-export const DEFAULT_ITEM_SETTINGS_MAP = DEFAULT_ITEM_SETTINGS.reduce((acc, item) => {
-=======
-=======
->>>>>>> Stashed changes
 export const DEFAULT_ITEMS = [
   { id: "soro", name: "Soro Fisiológico", unit: "un", min: 10, minConfidence: 0.7, shelfLifeDays: 365 },
   { id: "mascara", name: "Máscara Cirúrgica", unit: "un", min: 50, minConfidence: 0.7, shelfLifeDays: 365 },
@@ -52,30 +11,22 @@ export const DEFAULT_ITEMS = [
   { id: "pipeta", name: "Pipeta", unit: "un", min: 60, minConfidence: 0.7, shelfLifeDays: 365 },
   { id: "centrifuga", name: "Centrífuga", unit: "un", min: 2, minConfidence: 0.7, shelfLifeDays: 1825 },
   { id: "microscopio", name: "Microscópio", unit: "un", min: 2, minConfidence: 0.7, shelfLifeDays: 1825 },
-  { id: "ataduras", name: "Ataduras", unit: "rolos", min: 40, minConfidence: 0.7, shelfLifeDays: 365 }
+  { id: "ataduras", name: "Ataduras", unit: "rolos", min: 40, minConfidence: 0.7, shelfLifeDays: 365 },
+  { id: "gaze", name: "Gaze Estéril", unit: "pacotes", min: 180, minConfidence: 0.7, shelfLifeDays: 365 },
+  { id: "cateter", name: "Cateter Venoso", unit: "un", min: 100, minConfidence: 0.7, shelfLifeDays: 547 },
+  { id: "stent_coronario", name: "Stent Coronário", unit: "un", min: 6, minConfidence: 0.7, shelfLifeDays: 3650 },
+  { id: "fio_sutura", name: "Fio de Sutura", unit: "un", min: 160, minConfidence: 0.7, shelfLifeDays: 730 },
+  { id: "compressa", name: "Compressa Cirúrgica", unit: "pacotes", min: 200, minConfidence: 0.7, shelfLifeDays: 365 },
+  { id: "bisturi", name: "Bisturi", unit: "un", min: 120, minConfidence: 0.7 },
+  { id: "luva_esteril", name: "Luva Estéril", unit: "pares", min: 300, minConfidence: 0.7, shelfLifeDays: 365 },
+  { id: "agulha_espinal", name: "Agulha Espinal", unit: "un", min: 70, minConfidence: 0.7, shelfLifeDays: 1825 }
 ];
 
 export const DEFAULT_ITEM_MAP = DEFAULT_ITEMS.reduce((acc, item) => {
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
   acc[item.id] = item;
   return acc;
 }, {});
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-export const STORAGE_KEYS = {
-  stock: "stock",
-  detections: "savedDetections",
-  history: "history",
-  itemSettings: "itemSettings",
-  itemBatches: "itemBatches",
-};
-=======
-=======
->>>>>>> Stashed changes
 export const DEFAULT_ITEM_BATCHES = {};
 
 export const DEFAULT_HISTORY = [];
@@ -91,7 +42,4 @@ export const STORAGE_KEYS = {
 };
 
 export const KNOWN_LABELS = DEFAULT_ITEMS.map((item) => item.id);
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+
