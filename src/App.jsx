@@ -501,6 +501,108 @@ export default function App() {
     setSnackbar({ open: true, message: "Histórico de detecções limpo", type: "info" });
   }
 
+  function exportDetectionsReport() {
+    if (!saved || saved.length === 0) {
+      setSnackbar({
+        open: true,
+        message: "Nao ha registros para exportar.",
+        type: "info",
+      });
+      return;
+    }
+
+    try {
+      const header = [
+        "Data/Hora",
+        "Item",
+        "Operacao",
+        "Quantidade",
+        "Lote",
+        "Validade",
+        "Usuario",
+        "Precisao (%)",
+        "Observacao",
+      ];
+
+      const rows = saved.map((entry) => {
+        const date = entry.ts ? new Date(entry.ts).toLocaleString("pt-BR") : "-";
+        const operation = entry.operation === "entrada" ? "Entrada" : "Saida";
+        const quantity =
+          entry.quantity !== undefined && entry.quantity !== null
+            ? entry.quantity
+            : "-";
+        const lot = entry.lotId || "-";
+        const expiry = entry.expiryDate
+          ? new Date(entry.expiryDate).toLocaleDateString("pt-BR")
+          : "-";
+        const user = entry.user || "-";
+        const score =
+          entry.score !== undefined && entry.score !== null
+            ? (entry.score * 100).toFixed(1)
+            : "-";
+        const notes = Array.isArray(entry.consumedLots)
+          ? entry.consumedLots
+              .map((lotInfo) => `${(lotInfo && lotInfo.lotId) || "Lote"} (${(lotInfo && lotInfo.qty) || 0} un)`)
+              .join('; ')
+          : entry.image
+          ? "[imagem base64]"
+          : "";
+
+        return [
+          date,
+          entry.label || "-",
+          operation,
+          quantity,
+          lot,
+          expiry,
+          user,
+          score,
+          notes,
+        ];
+      });
+
+      const escapeCsv = (value) => {
+        if (value === null || value === undefined) return "";
+        const stringValue = String(value);
+        if (stringValue.search(/("|,|\n|\r)/g) >= 0) {
+          return `"${stringValue.replace(/"/g, '""')}"`;
+        }
+        return stringValue;
+      };
+
+      const csvContent = [header, ...rows]
+        .map((row) => row.map(escapeCsv).join(","))
+        .join("\r\n");
+
+      const blob = new Blob([csvContent], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const timestamp = new Date().toISOString().replace(/[:]/g, "-");
+      link.href = url;
+      link.download = `lumepatch-detections-${timestamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setSnackbar({
+        open: true,
+        message: "Relatorio exportado com sucesso.",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Erro ao exportar relatorio:", error);
+      setSnackbar({
+        open: true,
+        message: "Falha ao exportar relatorio.",
+        type: "error",
+      });
+    }
+  }
+
+
   // Add a lot
   function addLot() {
     const qty = parseInt(stockLotQty, 10);
@@ -1004,8 +1106,33 @@ export default function App() {
                     <Box display="flex" alignItems="center" mb={2} gap={2}>
                       <HistoryIcon color="primary" sx={{ mr: 0 }} />
                       <Typography variant="h6">Histórico de Detecções</Typography>
+                      <Box sx={{ ml: "auto" }}>
+                        <Tooltip
+                          title={
+                            saved.length === 0
+                              ? "Nao ha registros para exportar"
+                              : "Exportar historico em CSV"
+                          }
+                        >
+                          <span>
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              startIcon={<SaveAltIcon />}
+                              onClick={exportDetectionsReport}
+                              disabled={saved.length === 0}
+                              sx={{
+                                textTransform: "none",
+                                fontWeight: 600,
+                                borderRadius: 2,
+                              }}
+                            >
+                              Exportar relatorio
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      </Box>
                     </Box>
-
                     {saved.length === 0 ? (
                       <Box textAlign="center" py={4}>
                         <CameraAltIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
