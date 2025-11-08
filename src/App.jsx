@@ -57,7 +57,6 @@ import {
 
 import Dashboard from "./Dashboard";
 import TimelinePanel from "./components/TimelinePanel";
-import InventoryHealthPanel from "./components/InventoryHealthPanel";
 
 const TEACHABLE_MODEL_URL = "/teachable/";
 const TARGET_LABELS = [
@@ -256,7 +255,6 @@ function aggregateLotStatus(lots = []) {
       severityRank: 0,
       status: "empty",
       tooltip: "Nenhum lote registrado",
-      daysRemaining: null,
     };
   }
 
@@ -275,7 +273,6 @@ function aggregateLotStatus(lots = []) {
       severityRank: 0,
       status: "unknown",
       tooltip: "Lotes sem validade informada",
-      daysRemaining: null,
     }
   );
 }
@@ -957,71 +954,6 @@ export default function App() {
     [totalStockQuantity, lowStockItems.length, outOfStockItems.length, expiringSoonLots.length, expiredLots.length, saved.length]
   );
 
-  const recentSaidasByLabel = useMemo(() => {
-    const cutoff = Date.now() - 14 * DAY_MS;
-    return saved.reduce((acc, entry) => {
-      if (!entry || entry.operation !== "saida") return acc;
-      const ts = entry.ts ? new Date(entry.ts).getTime() : null;
-      if (!ts || ts < cutoff) return acc;
-      const label = entry.label || "desconhecido";
-      const qty = Number(entry.quantity) || 1;
-      acc[label] = (acc[label] || 0) + qty;
-      return acc;
-    }, {});
-  }, [saved]);
-
-  const inventoryHealthMetrics = useMemo(() => {
-    const qtyValues = Object.values(totals);
-    const maxQty = qtyValues.length > 0 ? Math.max(...qtyValues) : 0;
-    const flowValues = Object.values(recentSaidasByLabel);
-    const maxFlow = flowValues.length > 0 ? Math.max(...flowValues) : 0;
-
-    return allLabels
-      .map((label) => {
-        const qty = totals[label] || 0;
-        const lots = stockLots[label] || [];
-        const expiryInfo = aggregateLotStatus(lots);
-        const daysRemaining =
-          typeof expiryInfo.daysRemaining === "number" ? expiryInfo.daysRemaining : 60;
-
-        const stockScore =
-          maxQty > 0 ? Math.min(100, (qty / maxQty) * 100) : qty > 0 ? 60 : 0;
-        const expiryScore = Math.max(
-          0,
-          Math.min(100, (daysRemaining / 60) * 100)
-        );
-        const flowRaw = recentSaidasByLabel[label] || 0;
-        const flowScore = maxFlow > 0 ? Math.min(100, (flowRaw / maxFlow) * 100) : 0;
-
-        const stockPressure = 100 - stockScore;
-        const expiryPressure = 100 - expiryScore;
-        const flowPressure = flowScore;
-
-        const riskScore = Math.round(
-          stockPressure * 0.45 + expiryPressure * 0.35 + flowPressure * 0.2
-        );
-
-        const healthLabel =
-          riskScore >= 70 ? "Critico" : riskScore >= 45 ? "Atencao" : "Estavel";
-
-        return {
-          label,
-          qty,
-          expiryInfo,
-          stockScore: Math.round(stockScore),
-          expiryScore: Math.round(expiryScore),
-          flowScore: Math.round(flowScore),
-          stockPressure,
-          expiryPressure,
-          flowPressure,
-          riskScore,
-          healthLabel,
-          recentFlow: flowRaw,
-        };
-      })
-      .sort((a, b) => b.riskScore - a.riskScore);
-  }, [allLabels, totals, stockLots, recentSaidasByLabel]);
-
 
   return (
     <ThemeProvider theme={theme}>
@@ -1559,10 +1491,7 @@ export default function App() {
 
           {/* Tab 2: Dashboard */}
           <Box hidden={activeTab !== 2} sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-            <Stack spacing={2}>
-              <InventoryHealthPanel metrics={inventoryHealthMetrics} isMobile={isMobile} />
-              <Dashboard />
-            </Stack>
+            <Dashboard />
           </Box>
         </Paper>
       </Container>
