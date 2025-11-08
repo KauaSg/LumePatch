@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import * as tmImage from "@teachablemachine/image";
 import {
   ThemeProvider,
@@ -35,6 +35,8 @@ import {
   Snackbar,
   Alert,
   Fab,
+  ToggleButtonGroup,
+  ToggleButton,
   useMediaQuery,
   RadioGroup,
   FormControlLabel,
@@ -47,18 +49,15 @@ import {
   Analytics as AnalyticsIcon,
   Add as AddIcon,
   Delete as DeleteIcon,
-  SaveAlt as SaveAltIcon,
-  CheckCircle as CheckCircleIcon,
-  History as HistoryIcon,
   Login as LoginIcon,
-  UploadFile as UploadFileIcon,
-  Edit as EditIcon,
   Menu as MenuIcon,
   Input as InputIcon,
   Output as OutputIcon,
 } from "@mui/icons-material";
 
 import Dashboard from "./Dashboard";
+import TimelinePanel from "./components/TimelinePanel";
+import InventoryHealthPanel from "./components/InventoryHealthPanel";
 
 const TEACHABLE_MODEL_URL = "/teachable/";
 const TARGET_LABELS = [
@@ -79,6 +78,7 @@ const TARGET_LABELS = [
   "ataduras",
 ];
 const TEACHABLE_PROB_THRESHOLD = 0.85;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const theme = createTheme({
   palette: {
@@ -148,6 +148,136 @@ function consumeFEFO(lots = [], desiredQty) {
   // filter zero qty lots
   const cleaned = updated.filter((l) => Number(l.qty) > 0);
   return { success: true, consumedLots: consumed, updatedLots: cleaned };
+}
+
+function describeExpiry(expiryDate) {
+  if (!expiryDate) {
+    return {
+      label: "Sem validade",
+      chipColor: "default",
+      chipVariant: "outlined",
+      severityRank: 0,
+      status: "unknown",
+      dateLabel: null,
+      daysRemaining: null,
+      tooltip: "Nenhuma data de validade registrada",
+    };
+  }
+
+  const expiry = new Date(expiryDate);
+  if (Number.isNaN(expiry.getTime())) {
+    return {
+      label: "Data inválida",
+      chipColor: "warning",
+      chipVariant: "outlined",
+      severityRank: 3,
+      status: "invalid",
+      dateLabel: null,
+      daysRemaining: null,
+      tooltip: "Revise a validade informada para este lote",
+    };
+  }
+
+  const diffMs = expiry.getTime() - Date.now();
+  const diffDays =
+    diffMs > 0 ? Math.ceil(diffMs / DAY_MS) : Math.floor(diffMs / DAY_MS);
+  const formatted = expiry.toLocaleDateString("pt-BR");
+
+  if (diffDays < 0) {
+    return {
+      label: `Vencido há ${Math.abs(diffDays)}d`,
+      chipColor: "error",
+      chipVariant: "filled",
+      severityRank: 4,
+      status: "expired",
+      dateLabel: formatted,
+      daysRemaining: diffDays,
+      tooltip: `Validade expirada em ${formatted}`,
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      label: "Vence hoje",
+      chipColor: "error",
+      chipVariant: "filled",
+      severityRank: 4,
+      status: "critical",
+      dateLabel: formatted,
+      daysRemaining: diffDays,
+      tooltip: `Validade expira hoje (${formatted})`,
+    };
+  }
+
+  if (diffDays <= 7) {
+    return {
+      label: `Vence em ${diffDays}d`,
+      chipColor: "warning",
+      chipVariant: "filled",
+      severityRank: 3,
+      status: "warning",
+      dateLabel: formatted,
+      daysRemaining: diffDays,
+      tooltip: `Validade expira em ${formatted}`,
+    };
+  }
+
+  if (diffDays <= 30) {
+    return {
+      label: `Expira em ${diffDays}d`,
+      chipColor: "secondary",
+      chipVariant: "outlined",
+      severityRank: 2,
+      status: "soon",
+      dateLabel: formatted,
+      daysRemaining: diffDays,
+      tooltip: `Validade expira em ${formatted}`,
+    };
+  }
+
+  return {
+    label: `Validade em ${diffDays}d`,
+    chipColor: "success",
+    chipVariant: "outlined",
+    severityRank: 1,
+    status: "safe",
+    dateLabel: formatted,
+    daysRemaining: diffDays,
+    tooltip: `Validade expira em ${formatted}`,
+  };
+}
+
+function aggregateLotStatus(lots = []) {
+  if (!lots || lots.length === 0) {
+    return {
+      label: "Sem lotes",
+      chipColor: "default",
+      chipVariant: "outlined",
+      severityRank: 0,
+      status: "empty",
+      tooltip: "Nenhum lote registrado",
+      daysRemaining: null,
+    };
+  }
+
+  return lots.reduce(
+    (worst, lot) => {
+      const info = describeExpiry(lot.expiryDate);
+      if (info.severityRank > worst.severityRank) {
+        return info;
+      }
+      return worst;
+    },
+    {
+      label: "Sem validade",
+      chipColor: "default",
+      chipVariant: "outlined",
+      severityRank: 0,
+      status: "unknown",
+      tooltip: "Lotes sem validade informada",
+      daysRemaining: null,
+    }
+  );
 }
 
 
@@ -243,6 +373,11 @@ export default function App() {
   const [correctionLabel, setCorrectionLabel] = useState("");
   const [correctionQty, setCorrectionQty] = useState(1);
 
+  const [timelineRange, setTimelineRange] = useState("7d");
+  const [timelineOperation, setTimelineOperation] = useState("all");
+  const [highlightedTs, setHighlightedTs] = useState(null);
+  const savedInitialLoadRef = useRef(true);
+
   // Media queries para responsividade
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.down('md'));
@@ -259,6 +394,22 @@ export default function App() {
     return () => stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operationType]); 
+
+  useEffect(() => {
+    if (savedInitialLoadRef.current) {
+      savedInitialLoadRef.current = false;
+      return;
+    }
+    if (saved && saved.length > 0) {
+      setHighlightedTs(saved[0]?.ts || null);
+    }
+  }, [saved]);
+
+  useEffect(() => {
+    if (!highlightedTs) return;
+    const timer = setTimeout(() => setHighlightedTs(null), 5000);
+    return () => clearTimeout(timer);
+  }, [highlightedTs]);
 
   async function start() {
     try {
@@ -501,8 +652,8 @@ export default function App() {
     setSnackbar({ open: true, message: "Histórico de detecções limpo", type: "info" });
   }
 
-  function exportDetectionsReport() {
-    if (!saved || saved.length === 0) {
+  function exportDetectionsReport(data = saved) {
+    if (!data || data.length === 0) {
       setSnackbar({
         open: true,
         message: "Nao ha registros para exportar.",
@@ -524,7 +675,7 @@ export default function App() {
         "Observacao",
       ];
 
-      const rows = saved.map((entry) => {
+      const rows = data.map((entry) => {
         const date = entry.ts ? new Date(entry.ts).toLocaleString("pt-BR") : "-";
         const operation = entry.operation === "entrada" ? "Entrada" : "Saida";
         const quantity =
@@ -765,6 +916,111 @@ export default function App() {
   });
   const lowStockItems = Object.entries(totals).filter(([_, qty]) => qty <= 10);
   const outOfStockItems = Object.entries(totals).filter(([_, qty]) => qty === 0);
+  const totalStockQuantity = Object.values(totals).reduce((a, b) => a + b, 0);
+
+  const { expiringSoonLots, expiredLots } = useMemo(() => {
+    const soon = [];
+    const expired = [];
+
+    Object.entries(stockLots || {}).forEach(([label, lots = []]) => {
+      lots.forEach((lot) => {
+        const info = describeExpiry(lot.expiryDate);
+        const enriched = {
+          label,
+          lotId: lot.lotId,
+          qty: lot.qty,
+          ts: lot.ts,
+          expiryInfo: info,
+        };
+
+        if (info.status === "expired") {
+          expired.push(enriched);
+        }
+        if (["critical", "warning", "soon"].includes(info.status)) {
+          soon.push(enriched);
+        }
+      });
+    });
+
+    return { expiringSoonLots: soon, expiredLots: expired };
+  }, [stockLots]);
+
+  const kpiCards = useMemo(
+    () => [
+      { label: "Total em Estoque", value: totalStockQuantity, color: "primary.main" },
+      { label: "Baixo Estoque", value: lowStockItems.length, color: "warning.main" },
+      { label: "Esgotados", value: outOfStockItems.length, color: "error.main" },
+      { label: "Lotes perto do vencimento", value: expiringSoonLots.length, color: "warning.dark" },
+      { label: "Lotes vencidos", value: expiredLots.length, color: "error.dark" },
+      { label: "Deteccoes", value: saved.length, color: "secondary.main" },
+    ],
+    [totalStockQuantity, lowStockItems.length, outOfStockItems.length, expiringSoonLots.length, expiredLots.length, saved.length]
+  );
+
+  const recentSaidasByLabel = useMemo(() => {
+    const cutoff = Date.now() - 14 * DAY_MS;
+    return saved.reduce((acc, entry) => {
+      if (!entry || entry.operation !== "saida") return acc;
+      const ts = entry.ts ? new Date(entry.ts).getTime() : null;
+      if (!ts || ts < cutoff) return acc;
+      const label = entry.label || "desconhecido";
+      const qty = Number(entry.quantity) || 1;
+      acc[label] = (acc[label] || 0) + qty;
+      return acc;
+    }, {});
+  }, [saved]);
+
+  const inventoryHealthMetrics = useMemo(() => {
+    const qtyValues = Object.values(totals);
+    const maxQty = qtyValues.length > 0 ? Math.max(...qtyValues) : 0;
+    const flowValues = Object.values(recentSaidasByLabel);
+    const maxFlow = flowValues.length > 0 ? Math.max(...flowValues) : 0;
+
+    return allLabels
+      .map((label) => {
+        const qty = totals[label] || 0;
+        const lots = stockLots[label] || [];
+        const expiryInfo = aggregateLotStatus(lots);
+        const daysRemaining =
+          typeof expiryInfo.daysRemaining === "number" ? expiryInfo.daysRemaining : 60;
+
+        const stockScore =
+          maxQty > 0 ? Math.min(100, (qty / maxQty) * 100) : qty > 0 ? 60 : 0;
+        const expiryScore = Math.max(
+          0,
+          Math.min(100, (daysRemaining / 60) * 100)
+        );
+        const flowRaw = recentSaidasByLabel[label] || 0;
+        const flowScore = maxFlow > 0 ? Math.min(100, (flowRaw / maxFlow) * 100) : 0;
+
+        const stockPressure = 100 - stockScore;
+        const expiryPressure = 100 - expiryScore;
+        const flowPressure = flowScore;
+
+        const riskScore = Math.round(
+          stockPressure * 0.45 + expiryPressure * 0.35 + flowPressure * 0.2
+        );
+
+        const healthLabel =
+          riskScore >= 70 ? "Critico" : riskScore >= 45 ? "Atencao" : "Estavel";
+
+        return {
+          label,
+          qty,
+          expiryInfo,
+          stockScore: Math.round(stockScore),
+          expiryScore: Math.round(expiryScore),
+          flowScore: Math.round(flowScore),
+          stockPressure,
+          expiryPressure,
+          flowPressure,
+          riskScore,
+          healthLabel,
+          recentFlow: flowRaw,
+        };
+      })
+      .sort((a, b) => b.riskScore - a.riskScore);
+  }, [allLabels, totals, stockLots, recentSaidasByLabel]);
 
 
   return (
@@ -961,41 +1217,23 @@ export default function App() {
 
 
         {/* indicadores - Grid responsivo */}
-        <Grid container spacing={2} sx={{ mb: 3, justifyContent:'center' }}>
-          <Grid item xs={6} sm={6} md={3}>
-            <Paper elevation={2} sx={{ p: 2,px:8, textAlign: "center" }}>
-              <Typography variant={isMobile ? "h5" : "h4"} color="primary" fontWeight="bold">
-                {Object.values(totals).reduce((a, b) => a + b, 0)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">Total em Estoque</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={6} sm={6} md={3}>
-            <Paper elevation={2} sx={{ p: 2,px:8, textAlign: "center" }}>
-              <Typography variant={isMobile ? "h5" : "h4"} color="warning.main" fontWeight="bold">
-                {lowStockItems.length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">Baixo Estoque</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={6} sm={6} md={3}>
-            <Paper elevation={2} sx={{ p: 2,px:8, textAlign: "center" }}>
-              <Typography variant={isMobile ? "h5" : "h4"} color="error.main" fontWeight="bold">
-                {outOfStockItems.length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">Esgotados</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={6} sm={6} md={3}>
-            <Paper elevation={2} sx={{ p: 2,px:8, textAlign: "center" }}>
-              <Typography variant={isMobile ? "h5" : "h4"} color="success.main" fontWeight="bold">
-                {saved.length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">Detecções</Typography>
-            </Paper>
-          </Grid>
+        <Grid container spacing={2} sx={{ mb: 3, justifyContent: "center" }}>
+          {kpiCards.map((kpi) => (
+            <Grid key={kpi.label} item xs={6} sm={4} md={2}>
+              <Paper elevation={2} sx={{ p: 2, px: 3, textAlign: "center", minWidth: 160 }}>
+                <Typography
+                  variant={isMobile ? "h5" : "h4"}
+                  sx={{ color: kpi.color, fontWeight: "bold" }}
+                >
+                  {typeof kpi.value === "number" ? kpi.value.toLocaleString("pt-BR") : kpi.value}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {kpi.label}
+                </Typography>
+              </Paper>
+            </Grid>
+          ))}
         </Grid>
-
         {/* NOVA SEÇÃO: Seleção de Tipo de Operação */}
         <Box elevation={2} sx={{ p: 1, mb: 1, borderRadius: 3 }}>
           <FormLabel component="legend" sx={{ mb: .5, fontWeight: 600, textAlign: 'center' }} >
@@ -1098,144 +1336,25 @@ export default function App() {
                 </Card>
               </Grid>
 
-              {/* Histórico */}
-              {/* Histórico - Ocupa toda a largura em mobile, metade em desktop */}
-              <Grid item xs={12} lg={4} >
-                <Card sx={{minWidth:'45vw'}}>
-                  <CardContent>
-                    <Box display="flex" alignItems="center" mb={2} gap={2}>
-                      <HistoryIcon color="primary" sx={{ mr: 0 }} />
-                      <Typography variant="h6">Histórico de Detecções</Typography>
-                      <Box sx={{ ml: "auto" }}>
-                        <Tooltip
-                          title={
-                            saved.length === 0
-                              ? "Nao ha registros para exportar"
-                              : "Exportar historico em CSV"
-                          }
-                        >
-                          <span>
-                            <Button
-                              variant="contained"
-                              color="primary"
-                              startIcon={<SaveAltIcon />}
-                              onClick={exportDetectionsReport}
-                              disabled={saved.length === 0}
-                              sx={{
-                                textTransform: "none",
-                                fontWeight: 600,
-                                borderRadius: 2,
-                              }}
-                            >
-                              Exportar relatorio
-                            </Button>
-                          </span>
-                        </Tooltip>
-                      </Box>
-                    </Box>
-                    {saved.length === 0 ? (
-                      <Box textAlign="center" py={4}>
-                        <CameraAltIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
-                        <Typography variant="body2" color="text.secondary">
-                          Nenhuma detecção foi realizada ainda.
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <List sx={{ maxHeight: isMobile ? 200 : 290, overflow: "auto" }}>
-                        {saved.map((s, i) => (
-                          <ListItem
-                            key={i}
-                            divider
-                            secondaryAction={
-                              <Tooltip title="Corrigir detecção">
-                                <IconButton
-                                  edge="end"
-                                  onClick={() => openCorrection(i)}
-                                  size="small"
-                                >
-                                  <EditIcon />
-                                </IconButton>
-                              </Tooltip>
-                            }
-                            sx={{ py: 1, gap:2}}
-                          >
-                            <ListItemAvatar>
-                              <Avatar
-                                variant="rounded"
-                                src={s.image}
-                                alt={s.label}
-                                sx={{
-                                  width: isMobile ? 50 : 60,
-                                  height: isMobile ? 35 : 45
-                                }}
-                              />
-                            </ListItemAvatar>
-                            <ListItemText
-                              primary={
-                                <Typography
-                                  fontWeight={600}
-                                  textTransform="capitalize"
-                                  fontSize={isMobile ? '0.875rem' : '1rem'}
-                                >
-                                  {s.label}
-                                </Typography>
-                              }
-                              secondary={
-                                <Box>
-                                  <Typography
-                                    variant="body2"
-                                    color="text.secondary"
-                                    fontSize={isMobile ? '0.75rem' : '0.875rem'}
-                                  >
-                                    {new Date(s.ts).toLocaleString()} — {s.user || "—"}
-                                  </Typography>
-                                  <Chip
-                                    label={`${(s.score * 100).toFixed(1)}%`}
-                                    size="small"
-                                    sx={{ mt: 0.5, fontSize: isMobile ? '0.7rem' : '0.8rem' }}
-                                  />
-                                  <Typography
-                                    variant="caption"
-                                    display="block"
-                                    fontSize={isMobile ? '0.7rem' : '0.75rem'}
-                                  >
-                                    Qtd: {s.quantity}
-                                  </Typography>
-                                </Box>
-                              }
-                            />
-                          </ListItem>
-                        ))}
-                      </List>
-                    )}
-
-                    <Stack direction="row" spacing={1} mt={2}>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        startIcon={<DeleteIcon />}
-                        fullWidth
-                        onClick={clearSaved}
-                        size={isMobile ? "small" : "medium"}
-                      >
-                        Limpar
-                      </Button>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        startIcon={<SaveAltIcon />}
-                        fullWidth
-                        onClick={exportSaved}
-                        size={isMobile ? "small" : "medium"}
-                      >
-                        Exportar detecções
-                      </Button>
-                    </Stack>
-                  </CardContent>
-                </Card>
+              {/* Historico */}
+              {/* Historico - Ocupa toda a largura em mobile, metade em desktop */}
+              <Grid item xs={12} lg={4}>
+                <TimelinePanel
+                  saved={saved}
+                  selectedRange={timelineRange}
+                  onRangeChange={setTimelineRange}
+                  selectedOperation={timelineOperation}
+                  onOperationChange={setTimelineOperation}
+                  onExportCsv={(data) => exportDetectionsReport(data)}
+                  onExportJson={exportSaved}
+                  onClear={clearSaved}
+                  onOpenCorrection={openCorrection}
+                  highlightedTs={highlightedTs}
+                  isMobile={isMobile}
+                />
               </Grid>
-
-              {/* Upload zip - Ocupa toda a largura */}
+              {/* Painel narrativo */}
+                            {/* Upload zip - Ocupa toda a largura */}
               <Grid item xs={12}>
                 <Card sx={{ mt: 2, borderRadius: 3 }}>
                   <CardContent sx={{ p: 2 }}>
@@ -1440,7 +1559,10 @@ export default function App() {
 
           {/* Tab 2: Dashboard */}
           <Box hidden={activeTab !== 2} sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-            <Dashboard />
+            <Stack spacing={2}>
+              <InventoryHealthPanel metrics={inventoryHealthMetrics} isMobile={isMobile} />
+              <Dashboard />
+            </Stack>
           </Box>
         </Paper>
       </Container>
@@ -1671,3 +1793,5 @@ export default function App() {
     </ThemeProvider>
   );
 }
+
+
